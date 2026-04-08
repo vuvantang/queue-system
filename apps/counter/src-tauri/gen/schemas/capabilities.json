@@ -1,0 +1,1 @@
+{"default":{"identifier":"default","description":"Default capability for the Counter app","local":true,"windows":["main"],"permissions":["core:default","core:window:default","dialog:default","updater:default","process:allow-restart","log:default"]}}

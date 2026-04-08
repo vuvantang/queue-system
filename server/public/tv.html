@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=1920, height=1080">
+  <title>Hệ thống xếp hàng - Queue</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <div id="app">
+    <!-- Header -->
+    <header id="header">
+      <div id="header-left">
+        <img id="logo" src="" alt="" class="hidden">
+        <h1 id="org-name">HỆ THỐNG XẾP HÀNG</h1>
+      </div>
+      <div id="connection-status" class="connected">Đã kết nối</div>
+    </header>
+
+    <!-- Main content -->
+    <main id="main">
+      <!-- Left: Serving -->
+      <section id="serving-section">
+        <h2>ĐANG PHỤC VỤ</h2>
+        <div id="serving-list"></div>
+      </section>
+
+      <!-- Right: Waiting -->
+      <section id="waiting-section">
+        <h2>ĐANG CHỜ</h2>
+        <div id="waiting-list"></div>
+        <div id="stats">
+          <span>Đã phục vụ: <strong id="completed-count">0</strong></span>
+          <span>Đang chờ: <strong id="waiting-count">0</strong></span>
+        </div>
+      </section>
+    </main>
+
+    <!-- Footer -->
+    <footer id="footer">
+      <span id="current-time"></span>
+      <span id="current-date"></span>
+    </footer>
+
+    <!-- Ad Slideshow overlay -->
+    <div id="ad-slideshow" class="hidden">
+      <img id="ad-slide-img" src="" alt="">
+    </div>
+
+    <!-- Announcement overlay -->
+    <div id="announcement" class="hidden">
+      <div class="announcement-content">
+        <div class="announcement-label">MỜI SỐ</div>
+        <div id="announcement-number"></div>
+        <div id="announcement-counter"></div>
+      </div>
+    </div>
+  </div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="/app.js"></script>
+</body>
+</html>

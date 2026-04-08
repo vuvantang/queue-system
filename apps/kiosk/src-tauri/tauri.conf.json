@@ -1,0 +1,50 @@
+{
+  "$schema": "https://raw.githubusercontent.com/tauri-apps/tauri/dev/crates/tauri-config-schema/schema.json",
+  "productName": "Queue Kiosk",
+  "version": "0.1.0",
+  "identifier": "com.bamso.kiosk",
+  "build": {
+    "frontendDist": "../dist",
+    "devUrl": "http://localhost:1420",
+    "beforeDevCommand": "npm run dev",
+    "beforeBuildCommand": "npm run build"
+  },
+  "app": {
+    "withGlobalTauri": true,
+    "windows": [
+      {
+        "title": "Queue - Lấy số",
+        "width": 1024,
+        "height": 768,
+        "fullscreen": true,
+        "decorations": false,
+        "resizable": true
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self' http: https:; connect-src 'self' http: https: ws: wss: tauri:; script-src 'self' 'unsafe-inline' 'unsafe-eval' http: https:; style-src 'self' 'unsafe-inline' http: https:; img-src 'self' data: http: https:; font-src 'self' http: https: data:"
+    }
+  },
+  "bundle": {
+    "active": true,
+    "createUpdaterArtifacts": "v1Compatible",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ]
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEY2NEY0MUM5OTE5NzUwClJXUlFsNUhKUVUvMkFBZGZYNG0vMUFXMmYrVS9qVWt1SmFvT092TW1tcjdiT0V5N2pZMEQ4bVVoCg==",
+      "endpoints": [
+        "https://github.com/vuvantang/queue-system/releases/latest/download/kiosk-update.json"
+      ],
+      "windows": {
+        "installMode": "passive"
+      }
+    }
+  }
+}

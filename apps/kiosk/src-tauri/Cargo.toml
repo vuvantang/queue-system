@@ -1,0 +1,29 @@
+[package]
+name = "bamso-kiosk"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "bamso_kiosk_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = ["devtools"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+rodio = { version = "0.19", features = ["mp3"] }
+reqwest = { version = "0.12", features = ["blocking"] }
+urlencoding = "2"
+tauri-plugin-autostart = "2"
+tauri-plugin-dialog = "2"
+tauri-plugin-updater = "2"
+tauri-plugin-process = "2"
+tauri-plugin-log = "2"
+log = "0.4"
+tokio = { version = "1", features = ["rt", "time"] }
+url = "2"
+hostname = "0.4"
+local-ip-address = "0.6"

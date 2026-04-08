@@ -1,0 +1,110 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 620" font-family="'Segoe UI', Arial, sans-serif">
+  <style>
+    .box { rx: 10; ry: 10; }
+    .label { text-anchor: middle; fill: white; font-size: 13px; font-weight: 600; }
+    .desc { text-anchor: middle; fill: #555; font-size: 11px; }
+    .arrow { stroke: #888; stroke-width: 2; fill: none; marker-end: url(#ah); }
+    .step { text-anchor: middle; fill: white; font-size: 20px; font-weight: bold; }
+    .stepbg { fill: #FF9800; }
+  </style>
+  <defs>
+    <marker id="ah" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+      <polygon points="0 0, 8 3, 0 6" fill="#888"/>
+    </marker>
+  </defs>
+
+  <!-- Title -->
+  <text x="500" y="35" text-anchor="middle" font-size="20" font-weight="bold" fill="#333">So do hoat dong he thong hang doi</text>
+
+  <!-- ===== STEP 1: Customer takes number ===== -->
+  <circle cx="120" cy="110" r="22" class="stepbg"/>
+  <text x="120" y="117" class="step">1</text>
+  <rect x="45" y="145" width="150" height="70" class="box" fill="#1565C0"/>
+  <text x="120" y="172" class="label">Khach hang</text>
+  <text x="120" y="190" class="label">lay so (Kiosk)</text>
+  <text x="120" y="235" class="desc">Chon loai dich vu</text>
+  <text x="120" y="250" class="desc">Nhan so A001</text>
+  <text x="120" y="265" class="desc">In phieu</text>
+
+  <!-- Arrow 1->2 -->
+  <path d="M 195 180 L 260 180" class="arrow"/>
+  <text x="228" y="172" font-size="10" fill="#888">POST /api/tickets</text>
+
+  <!-- ===== STEP 2: Server processes ===== -->
+  <circle cx="340" cy="110" r="22" class="stepbg"/>
+  <text x="340" y="117" class="step">2</text>
+  <rect x="265" y="145" width="150" height="70" class="box" fill="#7B1FA2"/>
+  <text x="340" y="172" class="label">Server xu ly</text>
+  <text x="340" y="190" class="label">tao so moi</text>
+  <text x="340" y="235" class="desc">Luu vao database</text>
+  <text x="340" y="250" class="desc">Phat Socket.IO event</text>
+  <text x="340" y="265" class="desc">ticket:created</text>
+
+  <!-- Arrow 2->3 -->
+  <path d="M 415 180 L 480 180" class="arrow"/>
+  <text x="448" y="172" font-size="10" fill="#888">Socket.IO</text>
+
+  <!-- ===== STEP 3: TV updates ===== -->
+  <circle cx="560" cy="110" r="22" class="stepbg"/>
+  <text x="560" y="117" class="step">3</text>
+  <rect x="485" y="145" width="150" height="70" class="box" fill="#00838F"/>
+  <text x="560" y="172" class="label">TV cap nhat</text>
+  <text x="560" y="190" class="label">danh sach cho</text>
+  <text x="560" y="235" class="desc">Hien thi so moi</text>
+  <text x="560" y="250" class="desc">Cap nhat so nguoi cho</text>
+
+  <!-- ===== STEP 4: Staff calls ===== -->
+  <circle cx="120" cy="360" r="22" class="stepbg"/>
+  <text x="120" y="367" class="step">4</text>
+  <rect x="45" y="395" width="150" height="70" class="box" fill="#43A047"/>
+  <text x="120" y="422" class="label">Nhan vien</text>
+  <text x="120" y="440" class="label">goi so (Counter)</text>
+  <text x="120" y="485" class="desc">Nhan "Goi so tiep"</text>
+  <text x="120" y="500" class="desc">Chon quay phuc vu</text>
+
+  <!-- Arrow 4->5 -->
+  <path d="M 195 430 L 260 430" class="arrow"/>
+  <text x="228" y="422" font-size="10" fill="#888">POST /call-next</text>
+
+  <!-- ===== STEP 5: Server broadcasts ===== -->
+  <circle cx="340" cy="360" r="22" class="stepbg"/>
+  <text x="340" y="367" class="step">5</text>
+  <rect x="265" y="395" width="150" height="70" class="box" fill="#7B1FA2"/>
+  <text x="340" y="422" class="label">Server phat</text>
+  <text x="340" y="440" class="label">thong bao</text>
+  <text x="340" y="485" class="desc">Cap nhat trang thai</text>
+  <text x="340" y="500" class="desc">ticket:called event</text>
+
+  <!-- Arrow 5->6 -->
+  <path d="M 415 430 L 480 430" class="arrow"/>
+
+  <!-- ===== STEP 6: Announcement ===== -->
+  <circle cx="560" cy="360" r="22" class="stepbg"/>
+  <text x="560" y="367" class="step">6</text>
+  <rect x="485" y="395" width="150" height="70" class="box" fill="#EF6C00"/>
+  <text x="560" y="422" class="label">Thong bao</text>
+  <text x="560" y="440" class="label">goi khach</text>
+  <text x="560" y="485" class="desc">TV: hien overlay</text>
+  <text x="560" y="500" class="desc">Loa: phat am thanh</text>
+  <text x="560" y="515" class="desc">"Moi so A001, den Quay 1"</text>
+
+  <!-- Arrow 6->7 -->
+  <path d="M 635 430 L 700 430" class="arrow"/>
+
+  <!-- ===== STEP 7: Complete ===== -->
+  <circle cx="780" cy="360" r="22" class="stepbg"/>
+  <text x="780" y="367" class="step">7</text>
+  <rect x="705" y="395" width="150" height="70" class="box" fill="#43A047"/>
+  <text x="780" y="422" class="label">Hoan thanh</text>
+  <text x="780" y="440" class="label">phuc vu</text>
+  <text x="780" y="485" class="desc">Nhan vien nhan</text>
+  <text x="780" y="500" class="desc">"Hoan thanh" hoac "Bo qua"</text>
+
+  <!-- Connecting arrow from step 3 area down to step 4 area -->
+  <path d="M 120 280 L 120 360" class="arrow" stroke-dasharray="6,4"/>
+  <text x="135" y="325" font-size="10" fill="#888" transform="rotate(-90, 135, 325)">Khach cho</text>
+
+  <!-- Loop arrow from 7 back to 4 -->
+  <path d="M 780 465 L 780 560 L 120 560 L 120 485" class="arrow" stroke-dasharray="6,4"/>
+  <text x="450" y="552" font-size="11" fill="#888">Goi so tiep theo...</text>
+</svg>

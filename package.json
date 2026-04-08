@@ -1,0 +1,10 @@
+{
+  "name": "bamso",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Hệ thống quản lý hàng đợi bấm số",
+  "workspaces": [
+    "server",
+    "apps/*"
+  ]
+}

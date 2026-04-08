@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'">
+  <title>Queue Server</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      background: #f0f5ed;
+      color: #1a2e1a;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .container {
+      max-width: 600px;
+      width: 90%;
+    }
+    .card {
+      background: #fff;
+      border-radius: 16px;
+      padding: 36px;
+      box-shadow: 0 4px 24px rgba(0,0,0,0.06);
+      border: 1px solid rgba(27,138,42,0.1);
+    }
+    .header {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      margin-bottom: 28px;
+    }
+    .header img { height: 48px; border-radius: 8px; }
+    .header img.hidden { display: none; }
+    .header h1 { font-size: 28px; color: #14531b; }
+    .status {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 24px;
+      font-size: 15px;
+      color: #4a6b4a;
+    }
+    .status-dot {
+      width: 10px; height: 10px;
+      background: #22a832;
+      border-radius: 50%;
+      animation: pulse 2s infinite;
+    }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.4; }
+    }
+    .info-grid {
+      display: grid;
+      grid-template-columns: 120px 1fr;
+      gap: 10px 16px;
+      font-size: 14px;
+      margin-bottom: 28px;
+      padding: 16px;
+      background: #f0f5ed;
+      border-radius: 10px;
+    }
+    .info-label { color: #4a6b4a; font-weight: 600; }
+    .info-value { color: #1a2e1a; word-break: break-all; }
+    .info-value a { color: #1b8a2a; text-decoration: none; }
+    .info-value a:hover { text-decoration: underline; }
+    .nav { display: flex; flex-direction: column; gap: 10px; }
+    .nav-btn {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 14px 20px;
+      background: #fff;
+      border: 1px solid rgba(27,138,42,0.15);
+      border-radius: 10px;
+      text-decoration: none;
+      color: #1a2e1a;
+      font-size: 15px;
+      transition: all 0.15s;
+    }
+    .nav-btn:hover {
+      background: #e8f0e4;
+      border-color: rgba(27,138,42,0.3);
+    }
+    .nav-btn .icon {
+      width: 36px; height: 36px;
+      border-radius: 8px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 18px;
+      color: #fff;
+      flex-shrink: 0;
+    }
+    .icon-admin { background: linear-gradient(135deg, #1b6d24, #22882e); }
+    .icon-tv { background: linear-gradient(135deg, #b8860b, #d4a017); }
+    .nav-btn .text strong { display: block; font-size: 15px; }
+    .nav-btn .text span { font-size: 12px; color: #4a6b4a; }
+    .footer {
+      text-align: center;
+      margin-top: 20px;
+      font-size: 12px;
+      color: #4a6b4a;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="card">
+      <div class="header">
+        <img id="logo" class="hidden" src="" alt="">
+        <h1 id="org-name">Queue Server</h1>
+      </div>
+
+      <div class="status">
+        <div class="status-dot"></div>
+        <span>Server đang hoạt động</span>
+      </div>
+
+      <div class="info-grid">
+        <span class="info-label">Địa chỉ</span>
+        <span class="info-value" id="server-url"></span>
+        <span class="info-label">Khu vực</span>
+        <span class="info-value" id="area-count">-</span>
+        <span class="info-label">Hàng đợi</span>
+        <span class="info-value" id="queue-info">-</span>
+        <span class="info-label">Thời gian</span>
+        <span class="info-value" id="server-time"></span>
+      </div>
+
+      <div class="nav">
+        <a href="/admin/" class="nav-btn">
+          <div class="icon icon-admin">&#9881;</div>
+          <div class="text">
+            <strong>Quản trị hệ thống</strong>
+            <span>Cài đặt, khu vực, tài khoản</span>
+          </div>
+        </a>
+        <a href="/tv" class="nav-btn">
+          <div class="icon icon-tv">&#128250;</div>
+          <div class="text">
+            <strong>Màn hình TV</strong>
+            <span>Hiển thị hàng đợi cho khách</span>
+          </div>
+        </a>
+      </div>
+    </div>
+
+    <div class="footer">Queue - Hệ thống quản lý hàng đợi</div>
+  </div>
+
+  <script>
+    (async function() {
+      const API = location.origin + '/api';
+
+      document.getElementById('server-url').textContent = location.origin;
+
+      try {
+        const res = await fetch(API + '/settings');
+        const s = await res.json();
+        if (s.org_name) document.getElementById('org-name').textContent = s.org_name;
+        if (s.logo) {
+          const logo = document.getElementById('logo');
+          logo.src = s.logo;
+          logo.classList.remove('hidden');
+        }
+      } catch(e) {}
+
+      try {
+        const res = await fetch(API + '/areas');
+        const areas = await res.json();
+        const active = areas.filter(a => a.is_active);
+        document.getElementById('area-count').textContent = active.length + ' khu vực';
+
+        let totalWaiting = 0;
+        let totalServing = 0;
+        for (const area of active) {
+          try {
+            const qr = await fetch(API + '/areas/' + area.id + '/queue');
+            const q = await qr.json();
+            totalWaiting += q.waiting_count;
+            totalServing += q.serving.length;
+          } catch(e) {}
+        }
+        document.getElementById('queue-info').textContent = totalServing + ' đang phục vụ, ' + totalWaiting + ' đang chờ';
+      } catch(e) {}
+
+      function updateTime() {
+        document.getElementById('server-time').textContent = new Date().toLocaleString('vi-VN');
+      }
+      updateTime();
+      setInterval(updateTime, 1000);
+    })();
+  </script>
+</body>
+</html>

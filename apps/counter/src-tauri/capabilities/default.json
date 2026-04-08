@@ -1,0 +1,14 @@
+{
+  "$schema": "https://raw.githubusercontent.com/tauri-apps/tauri/dev/crates/tauri-utils/schema.json",
+  "identifier": "default",
+  "description": "Default capability for the Counter app",
+  "windows": ["main"],
+  "permissions": [
+    "core:default",
+    "core:window:default",
+    "dialog:default",
+    "updater:default",
+    "process:allow-restart",
+    "log:default"
+  ]
+}

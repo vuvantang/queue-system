@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Queue - Lấy số</title>
+  <link rel="stylesheet" href="/src/style.css">
+</head>
+<body>
+  <div id="app">
+    <!-- Login screen -->
+    <div id="login-screen">
+      <div class="login-card">
+        <h1>Queue Kiosk</h1>
+        <h2>Đăng nhập</h2>
+        <div class="form-group">
+          <label>Địa chỉ Server:</label>
+          <input type="text" id="login-server-url" placeholder="http://192.168.1.100:3000">
+        </div>
+        <div class="form-group">
+          <label>Tên đăng nhập:</label>
+          <input type="text" id="login-username" placeholder="admin">
+        </div>
+        <div class="form-group">
+          <label>Mật khẩu:</label>
+          <input type="password" id="login-password" placeholder="••••••">
+        </div>
+        <div id="login-error" class="error-text hidden"></div>
+        <button id="login-btn" class="btn-primary">Đăng nhập</button>
+        <div id="login-machine-info" class="machine-info"></div>
+      </div>
+    </div>
+
+    <!-- Area selector screen -->
+    <div id="area-screen" class="hidden">
+      <div class="area-selector-card">
+        <h2>Chọn khu vực</h2>
+        <div id="area-list"></div>
+        <button id="area-logout-btn" class="btn-logout">Đăng xuất</button>
+      </div>
+    </div>
+
+    <!-- Main kiosk screen -->
+    <div id="kiosk-screen" class="hidden">
+      <header>
+        <img id="kiosk-logo" class="hidden" src="" alt="">
+        <div class="header-center">
+          <h1 id="kiosk-org-name">LẤY SỐ</h1>
+          <div id="kiosk-area-name"></div>
+        </div>
+      </header>
+
+      <main id="service-buttons">
+        <!-- Service type buttons rendered here -->
+      </main>
+
+      <footer>
+        <div id="kiosk-stats">
+          Đang chờ: <strong id="kiosk-waiting">0</strong>
+        </div>
+        <div id="kiosk-contact" class="hidden"></div>
+        <div id="kiosk-time"></div>
+      </footer>
+
+      <!-- Settings button -->
+      <button id="open-settings" title="Cài đặt">&#9881;</button>
+
+      <!-- TV status -->
+      <div id="tv-status" class="hidden">
+        <span>&#128250;</span> <span id="tv-status-text"></span>
+      </div>
+    </div>
+
+    <!-- Ticket result overlay -->
+    <div id="ticket-result" class="hidden">
+      <div class="ticket-result-content">
+        <div class="ticket-label">SỐ CỦA BẠN</div>
+        <div id="ticket-result-number"></div>
+        <div class="ticket-hint">Vui lòng chờ gọi số</div>
+        <div class="ticket-waiting">Đang chờ: <span id="result-waiting-count"></span> người</div>
+      </div>
+    </div>
+
+    <!-- Settings password prompt -->
+    <div id="settings-password-overlay" class="hidden">
+      <div class="settings-password-card">
+        <h2>Xác thực</h2>
+        <p class="settings-password-hint">Nhập mật khẩu để mở cài đặt</p>
+        <input type="password" id="settings-password-input" placeholder="Mật khẩu">
+        <div id="settings-password-error" class="error-text hidden"></div>
+        <div class="settings-actions">
+          <button id="settings-password-ok" class="btn-primary">Xác nhận</button>
+          <button id="settings-password-cancel" class="btn-secondary">Hủy</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Settings overlay -->
+    <div id="settings-overlay" class="hidden">
+      <div class="settings-card">
+        <h2>Cài đặt</h2>
+
+        <!-- Printer selection -->
+        <div class="settings-group">
+          <label for="settings-printer">Máy in vé:</label>
+          <select id="settings-printer">
+            <option value="">Đang tải...</option>
+          </select>
+          <button id="settings-refresh-printers" class="btn-refresh" title="Tải lại">&#x21bb;</button>
+        </div>
+
+        <!-- Auto-print toggle -->
+        <div class="settings-group">
+          <label class="settings-checkbox">
+            <input type="checkbox" id="settings-auto-print" checked>
+            <span>Tự động in vé khi lấy số</span>
+          </label>
+        </div>
+
+        <!-- TV display toggle -->
+        <div class="settings-group">
+          <label class="settings-checkbox">
+            <input type="checkbox" id="settings-tv-enabled">
+            <span>Mở màn hình TV (màn hình phụ)</span>
+          </label>
+          <div id="settings-tv-warning" class="warning-text hidden">
+            ⚠ Chỉ phát hiện 1 màn hình. Cần kết nối màn hình thứ 2.
+          </div>
+        </div>
+
+        <!-- Auto-start toggle -->
+        <div class="settings-group">
+          <label class="settings-checkbox">
+            <input type="checkbox" id="settings-autostart">
+            <span>Tự động khởi động khi bật máy</span>
+          </label>
+        </div>
+
+        <!-- Announce audio toggle -->
+        <div class="settings-group">
+          <label class="settings-checkbox">
+            <input type="checkbox" id="settings-announce-enabled" checked>
+            <span>Phát âm thanh gọi số trên Kiosk</span>
+          </label>
+        </div>
+
+        <!-- TTS Audio cache -->
+        <div class="settings-group">
+          <label for="settings-tts-path" class="settings-section-label">Thư mục âm thanh:</label>
+          <div class="tts-path-row">
+            <input type="text" id="settings-tts-path" placeholder="Để trống = mặc định">
+            <button id="settings-tts-browse" class="btn-test" title="Chọn thư mục">&#128193;</button>
+          </div>
+          <div id="tts-cache-info" class="tts-cache-info"></div>
+          <div class="tts-actions-row">
+            <button id="settings-preload-tts" class="btn-secondary btn-sm">Tải âm thanh</button>
+            <span id="settings-preload-status" class="preload-status"></span>
+          </div>
+        </div>
+
+        <!-- Test TTS -->
+        <div class="settings-group">
+          <label for="settings-test-tts" class="settings-section-label">Thử âm thanh:</label>
+          <div class="test-tts-row">
+            <input type="text" id="settings-test-tts" placeholder="Nhập chuỗi để thử phát..." value="Xin mời số A 0 0 1 đến quầy 1">
+            <button id="settings-test-ding" class="btn-test" title="Phát ding">&#128276;</button>
+            <button id="settings-test-speak" class="btn-test" title="Phát giọng nói">&#9654;</button>
+          </div>
+        </div>
+
+        <!-- Announcement monitor -->
+        <div class="settings-group">
+          <label class="settings-section-label">Âm thanh thông báo:</label>
+          <div id="announce-monitor">
+            <div id="announce-current" class="announce-status hidden">
+              <span class="announce-icon pulse">&#9835;</span>
+              <span id="announce-current-text"></span>
+            </div>
+            <div id="announce-pending-section" class="hidden">
+              <div class="announce-sub-label">Chờ phát (<span id="announce-pending-count">0</span>):</div>
+              <ul id="announce-pending-list" class="announce-list"></ul>
+            </div>
+            <div id="announce-history-section" class="hidden">
+              <div class="announce-sub-label">Đã phát:</div>
+              <ul id="announce-history-list" class="announce-list history"></ul>
+            </div>
+            <div id="announce-empty" class="announce-empty">Không có thông báo nào</div>
+          </div>
+        </div>
+
+        <!-- Action buttons -->
+        <div class="settings-actions">
+          <button id="settings-save" class="btn-primary">Lưu</button>
+          <button id="settings-cancel" class="btn-secondary">Hủy</button>
+        </div>
+
+        <hr class="settings-divider">
+
+        <button id="settings-open-log" class="btn-logout">Mở thư mục Log</button>
+        <button id="settings-change-area" class="btn-logout" style="margin-top: 8px;">Đổi khu vực</button>
+        <button id="settings-logout" class="btn-logout" style="margin-top: 8px;">Đăng xuất</button>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="/src/main.ts"></script>
+</body>
+</html>

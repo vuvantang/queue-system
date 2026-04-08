@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Queue - Gọi số</title>
+  <link rel="stylesheet" href="/src/style.css">
+</head>
+<body>
+  <div id="app">
+    <!-- Login Screen -->
+    <div id="login-screen">
+      <div class="login-card">
+        <h1>Queue</h1>
+        <h2>Đăng nhập</h2>
+        <div class="form-group">
+          <label>Địa chỉ Server:</label>
+          <input type="text" id="login-server-url" placeholder="http://192.168.1.100:3000">
+        </div>
+        <div class="form-group">
+          <label>Tên đăng nhập:</label>
+          <input type="text" id="login-username" placeholder="admin">
+        </div>
+        <div class="form-group">
+          <label>Mật khẩu:</label>
+          <input type="password" id="login-password" placeholder="••••••">
+        </div>
+        <div id="login-error" class="error-text hidden"></div>
+        <button id="login-btn" class="btn-primary">Đăng nhập</button>
+      </div>
+    </div>
+
+    <!-- Main Counter Screen -->
+    <div id="counter-screen" class="hidden">
+      <!-- Top bar -->
+      <header id="topbar">
+        <div class="topbar-row">
+          <span id="user-display-name"></span>
+          <select id="area-select">
+            <option value="">Chọn khu vực</option>
+          </select>
+          <div class="topbar-right">
+            <button id="btn-change-password" class="btn-sm">Đổi mật khẩu</button>
+            <button id="btn-open-log" class="btn-sm">Log</button>
+            <button id="btn-logout" class="btn-sm btn-danger">Đăng xuất</button>
+          </div>
+        </div>
+      </header>
+
+      <!-- Tabs -->
+      <div id="tab-bar">
+        <button class="tab-btn active" data-tab="tab-single">Quầy</button>
+        <button class="tab-btn" data-tab="tab-multi">Đa dịch vụ</button>
+      </div>
+
+      <!-- Tab 1: Single service (original) -->
+      <div id="tab-single" class="tab-content">
+        <div class="tab-selects">
+          <select id="counter-select">
+            <option value="">Chọn quầy</option>
+          </select>
+          <select id="service-type-select">
+            <option value="">Tất cả dịch vụ</option>
+          </select>
+        </div>
+
+        <!-- Current serving -->
+        <div id="current-serving">
+          <div>
+            <div class="serving-label">ĐANG PHỤC VỤ</div>
+            <div id="current-ticket-number">---</div>
+          </div>
+          <div class="serving-meta">
+            <div id="current-service-type"></div>
+            <div id="current-counter-name"></div>
+          </div>
+        </div>
+
+        <!-- Action buttons -->
+        <div id="actions">
+          <button id="btn-call-next" class="action-btn call">
+            <span class="action-icon">&#9654;</span>
+            GỌI TIẾP
+          </button>
+          <button id="btn-recall" class="action-btn recall" disabled>
+            <span class="action-icon">&#128264;</span>
+            GỌI LẠI
+          </button>
+          <button id="btn-complete" class="action-btn complete" disabled>
+            <span class="action-icon">&#10004;</span>
+            HOÀN THÀNH
+          </button>
+          <button id="btn-skip" class="action-btn skip" disabled>
+            <span class="action-icon">&#10006;</span>
+            BỎ QUA
+          </button>
+        </div>
+
+        <!-- Queue info -->
+        <div id="queue-info">
+          <div class="queue-section">
+            <h3>Đang chờ (<span id="queue-waiting-count">0</span>)</h3>
+            <div id="queue-waiting-list"></div>
+          </div>
+          <div class="queue-stats">
+            <div class="stat">
+              <span class="stat-value" id="stat-completed">0</span>
+              <span class="stat-label">Đã phục vụ</span>
+            </div>
+            <div class="stat">
+              <span class="stat-value" id="stat-waiting">0</span>
+              <span class="stat-label">Đang chờ</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Tab 2: Multi-service -->
+      <div id="tab-multi" class="tab-content hidden">
+        <!-- Service type call buttons -->
+        <div id="multi-service-buttons"></div>
+        <!-- Serving list for multi-service -->
+        <div id="multi-serving-list"></div>
+        <!-- Queue overview -->
+        <div id="multi-queue-info">
+          <div class="queue-section">
+            <h3>Đang chờ (<span id="multi-waiting-count">0</span>)</h3>
+            <div id="multi-waiting-list"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Change Password Modal -->
+    <div id="password-modal" class="modal hidden">
+      <div class="modal-content">
+        <h3>Đổi mật khẩu</h3>
+        <div class="form-group">
+          <label>Mật khẩu cũ:</label>
+          <input type="password" id="old-password">
+        </div>
+        <div class="form-group">
+          <label>Mật khẩu mới:</label>
+          <input type="password" id="new-password">
+        </div>
+        <div id="password-error" class="error-text hidden"></div>
+        <div class="modal-actions">
+          <button id="btn-save-password" class="btn-primary">Lưu</button>
+          <button id="btn-cancel-password" class="btn-secondary">Hủy</button>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <script type="module" src="/src/main.ts"></script>
+</body>
+</html>

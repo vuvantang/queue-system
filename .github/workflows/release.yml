@@ -1,0 +1,291 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+  packages: write
+
+jobs:
+  # ─── Build Docker image cho server ───
+  build-server:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Extract version
+        id: tag
+        run: echo "version=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
+
+      - name: Update server version
+        run: |
+          VERSION=${{ steps.tag.outputs.version }}
+          cd server
+          jq --arg v "$VERSION" '.version = $v' package.json > tmp.json && mv tmp.json package.json
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v6
+        with:
+          context: server
+          file: server/Dockerfile
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository }}/server:v${{ steps.tag.outputs.version }}
+            ghcr.io/${{ github.repository }}/server:latest
+
+  # ─── Build Kiosk Windows NSIS ───
+  build-kiosk:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Extract version
+        id: tag
+        shell: bash
+        run: echo "version=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
+
+      - name: Update version from tag
+        shell: bash
+        run: |
+          VERSION=${{ steps.tag.outputs.version }}
+          # tauri.conf.json
+          jq --arg v "$VERSION" '.version = $v' apps/kiosk/src-tauri/tauri.conf.json > tmp.json && mv tmp.json apps/kiosk/src-tauri/tauri.conf.json
+          # Cargo.toml
+          sed -i "s/^version = \".*\"/version = \"$VERSION\"/" apps/kiosk/src-tauri/Cargo.toml
+          # package.json
+          jq --arg v "$VERSION" '.version = $v' apps/kiosk/package.json > tmp.json && mv tmp.json apps/kiosk/package.json
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Rust cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: apps/kiosk/src-tauri
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Check signing key
+        shell: bash
+        run: |
+          if [ -n "$TAURI_SIGNING_PRIVATE_KEY" ]; then
+            echo "TAURI_SIGNING_PRIVATE_KEY is set (${#TAURI_SIGNING_PRIVATE_KEY} chars)"
+            echo "First 30 chars: ${TAURI_SIGNING_PRIVATE_KEY:0:30}..."
+          else
+            echo "WARNING: TAURI_SIGNING_PRIVATE_KEY is NOT set!"
+          fi
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+
+      - name: Build Kiosk
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD || '' }}
+        run: |
+          cd apps/kiosk
+          npx tauri build --bundles nsis
+
+      - name: List build output
+        shell: bash
+        run: find apps/kiosk/src-tauri/target/release/bundle/nsis/ -type f || true
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: kiosk-nsis
+          path: apps/kiosk/src-tauri/target/release/bundle/nsis/
+
+  # ─── Build Counter Windows NSIS ───
+  build-counter:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Extract version
+        id: tag
+        shell: bash
+        run: echo "version=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
+
+      - name: Update version from tag
+        shell: bash
+        run: |
+          VERSION=${{ steps.tag.outputs.version }}
+          # tauri.conf.json
+          jq --arg v "$VERSION" '.version = $v' apps/counter/src-tauri/tauri.conf.json > tmp.json && mv tmp.json apps/counter/src-tauri/tauri.conf.json
+          # Cargo.toml
+          sed -i "s/^version = \".*\"/version = \"$VERSION\"/" apps/counter/src-tauri/Cargo.toml
+          # package.json
+          jq --arg v "$VERSION" '.version = $v' apps/counter/package.json > tmp.json && mv tmp.json apps/counter/package.json
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Rust cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: apps/counter/src-tauri
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build Counter
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD || '' }}
+        run: |
+          cd apps/counter
+          npx tauri build --bundles nsis
+
+      - name: List build output
+        shell: bash
+        run: find apps/counter/src-tauri/target/release/bundle/nsis/ -type f || true
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: counter-nsis
+          path: apps/counter/src-tauri/target/release/bundle/nsis/
+
+  # ─── Create GitHub Release + Update manifests ───
+  release:
+    runs-on: ubuntu-latest
+    needs: [build-kiosk, build-counter]
+    steps:
+      - name: Extract version
+        id: tag
+        run: echo "version=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
+
+      - name: Download kiosk artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: kiosk-nsis
+          path: kiosk-nsis
+
+      - name: Download counter artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: counter-nsis
+          path: counter-nsis
+
+      - name: Debug artifacts
+        run: |
+          echo "=== kiosk-nsis ==="
+          find kiosk-nsis -type f || true
+          echo "=== counter-nsis ==="
+          find counter-nsis -type f || true
+
+      - name: Prepare release assets
+        id: assets
+        run: |
+          VERSION=${{ steps.tag.outputs.version }}
+
+          # Tìm files - liệt kê tất cả trước
+          echo "=== All files ==="
+          find kiosk-nsis counter-nsis -type f 2>/dev/null || true
+
+          KIOSK_EXE=$(find kiosk-nsis -name "*.exe" -type f 2>/dev/null | head -1)
+          KIOSK_ZIP=$(find kiosk-nsis -name "*.nsis.zip" -not -name "*.sig" -type f 2>/dev/null | head -1)
+          KIOSK_SIG=$(find kiosk-nsis -name "*.nsis.zip.sig" -type f 2>/dev/null | head -1)
+          COUNTER_EXE=$(find counter-nsis -name "*.exe" -type f 2>/dev/null | head -1)
+          COUNTER_ZIP=$(find counter-nsis -name "*.nsis.zip" -not -name "*.sig" -type f 2>/dev/null | head -1)
+          COUNTER_SIG=$(find counter-nsis -name "*.nsis.zip.sig" -type f 2>/dev/null | head -1)
+
+          echo "KIOSK_EXE=$KIOSK_EXE"
+          echo "KIOSK_ZIP=$KIOSK_ZIP"
+          echo "KIOSK_SIG=$KIOSK_SIG"
+          echo "COUNTER_EXE=$COUNTER_EXE"
+          echo "COUNTER_ZIP=$COUNTER_ZIP"
+          echo "COUNTER_SIG=$COUNTER_SIG"
+
+          # Đọc signatures
+          KIOSK_SIG_CONTENT=""
+          if [ -n "$KIOSK_SIG" ] && [ -f "$KIOSK_SIG" ]; then
+            KIOSK_SIG_CONTENT=$(cat "$KIOSK_SIG")
+            echo "Kiosk signature loaded (${#KIOSK_SIG_CONTENT} chars)"
+          else
+            echo "WARNING: Kiosk signature file not found!"
+          fi
+
+          COUNTER_SIG_CONTENT=""
+          if [ -n "$COUNTER_SIG" ] && [ -f "$COUNTER_SIG" ]; then
+            COUNTER_SIG_CONTENT=$(cat "$COUNTER_SIG")
+            echo "Counter signature loaded (${#COUNTER_SIG_CONTENT} chars)"
+          else
+            echo "WARNING: Counter signature file not found!"
+          fi
+
+          # Tạo update manifest cho Tauri updater
+          DOWNLOAD_BASE="https://github.com/${{ github.repository }}/releases/download/v${VERSION}"
+          PUB_DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+
+          # Tên file cố định (không dấu cách)
+          KIOSK_ZIP_RELEASE="Queue-Kiosk_${VERSION}_x64-setup.nsis.zip"
+          COUNTER_ZIP_RELEASE="Queue-Counter_${VERSION}_x64-setup.nsis.zip"
+
+          jq -n \
+            --arg ver "$VERSION" \
+            --arg notes "Release v${VERSION}" \
+            --arg date "$PUB_DATE" \
+            --arg url "${DOWNLOAD_BASE}/${KIOSK_ZIP_RELEASE}" \
+            --arg sig "$KIOSK_SIG_CONTENT" \
+            '{version: $ver, notes: $notes, pub_date: $date, platforms: {"windows-x86_64": {url: $url, signature: $sig}}}' \
+            > kiosk-update.json
+
+          jq -n \
+            --arg ver "$VERSION" \
+            --arg notes "Release v${VERSION}" \
+            --arg date "$PUB_DATE" \
+            --arg url "${DOWNLOAD_BASE}/${COUNTER_ZIP_RELEASE}" \
+            --arg sig "$COUNTER_SIG_CONTENT" \
+            '{version: $ver, notes: $notes, pub_date: $date, platforms: {"windows-x86_64": {url: $url, signature: $sig}}}' \
+            > counter-update.json
+
+          echo "=== kiosk-update.json ==="
+          cat kiosk-update.json
+          echo "=== counter-update.json ==="
+          cat counter-update.json
+
+          # Collect và rename files (bỏ dấu cách trong tên)
+          mkdir -p release-assets
+
+          KIOSK_EXE_RELEASE="Queue-Kiosk_${VERSION}_x64-setup.exe"
+          KIOSK_ZIP_RELEASE="Queue-Kiosk_${VERSION}_x64-setup.nsis.zip"
+          COUNTER_EXE_RELEASE="Queue-Counter_${VERSION}_x64-setup.exe"
+          COUNTER_ZIP_RELEASE="Queue-Counter_${VERSION}_x64-setup.nsis.zip"
+
+          [ -n "$KIOSK_EXE" ] && cp "$KIOSK_EXE" "release-assets/${KIOSK_EXE_RELEASE}"
+          [ -n "$KIOSK_ZIP" ] && cp "$KIOSK_ZIP" "release-assets/${KIOSK_ZIP_RELEASE}"
+          [ -n "$COUNTER_EXE" ] && cp "$COUNTER_EXE" "release-assets/${COUNTER_EXE_RELEASE}"
+          [ -n "$COUNTER_ZIP" ] && cp "$COUNTER_ZIP" "release-assets/${COUNTER_ZIP_RELEASE}"
+          cp kiosk-update.json counter-update.json release-assets/
+
+          echo "=== release-assets ==="
+          ls -la release-assets/
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.tag.outputs.version }}
+          name: Release v${{ steps.tag.outputs.version }}
+          files: release-assets/*

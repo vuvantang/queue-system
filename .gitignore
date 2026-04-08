@@ -1,0 +1,10 @@
+node_modules/
+dist/
+*.db
+*.db-journal
+.env
+.DS_Store
+
+# Tauri
+apps/*/src-tauri/target/
+certs/

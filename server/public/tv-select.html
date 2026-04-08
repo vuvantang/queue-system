@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Chọn khu vực - Queue</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      background: #f0f5ed;
+      color: #1a2e1a;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .container {
+      text-align: center;
+      max-width: 600px;
+      width: 90%;
+    }
+    .logo { height: 64px; margin-bottom: 16px; border-radius: 10px; }
+    .logo.hidden { display: none; }
+    h1 { font-size: 32px; margin-bottom: 8px; letter-spacing: 2px; color: #14531b; }
+    .subtitle { color: #4a6b4a; font-size: 18px; margin-bottom: 40px; }
+    .areas { display: flex; flex-direction: column; gap: 14px; }
+    .area-btn {
+      display: block;
+      padding: 22px 30px;
+      background: linear-gradient(135deg, #1b6d24, #22882e);
+      color: #fff;
+      text-decoration: none;
+      border-radius: 14px;
+      font-size: 22px;
+      font-weight: 600;
+      transition: transform 0.15s, box-shadow 0.15s;
+      box-shadow: 0 4px 16px rgba(27, 138, 42, 0.2);
+    }
+    .area-btn:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 8px 24px rgba(27, 138, 42, 0.35);
+    }
+    .empty { color: #4a6b4a; font-size: 18px; margin-top: 20px; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <img id="logo" class="logo hidden" src="" alt="">
+    <h1 id="org-name">HỆ THỐNG XẾP HÀNG</h1>
+    <p class="subtitle">Chọn khu vực hiển thị</p>
+    <div id="areas" class="areas"></div>
+  </div>
+
+  <script>
+    (async function() {
+      const API = window.location.origin + '/api';
+
+      // Load settings
+      try {
+        const res = await fetch(API + '/settings');
+        const settings = await res.json();
+        if (settings.org_name) document.getElementById('org-name').textContent = settings.org_name;
+        if (settings.logo) {
+          const logo = document.getElementById('logo');
+          logo.src = settings.logo;
+          logo.classList.remove('hidden');
+        }
+      } catch(e) {}
+
+      // Load areas
+      try {
+        const res = await fetch(API + '/areas');
+        const areas = await res.json();
+        const container = document.getElementById('areas');
+
+        const active = areas.filter(a => a.is_active);
+        if (active.length === 0) {
+          container.innerHTML = '<p class="empty">Chưa có khu vực nào</p>';
+          return;
+        }
+
+        active.forEach(area => {
+          const a = document.createElement('a');
+          a.className = 'area-btn';
+          a.href = '/tv/' + area.id;
+          a.textContent = area.name;
+          container.appendChild(a);
+        });
+      } catch(e) {
+        document.getElementById('areas').innerHTML = '<p class="empty">Không thể kết nối server</p>';
+      }
+    })();
+  </script>
+</body>
+</html>

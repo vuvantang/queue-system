@@ -91,7 +91,8 @@ fn list_printers_sync() -> Result<PrinterList, String> {
     const CREATE_NO_WINDOW: u32 = 0x08000000;
 
     let output = std::process::Command::new("powershell")
-        .args(["-NoProfile", "-Command", "Get-Printer | Select-Object -Property Name,Default | ConvertTo-Json"])
+        // Fixed script text; no caller-controlled input reaches PowerShell here.
+        .args(["-NoProfile", "-NonInteractive", "-Command", "Get-Printer | Select-Object -Property Name,Default | ConvertTo-Json"])
         .creation_flags(CREATE_NO_WINDOW)
         .output()
         .map_err(|e| format!("Failed to run Get-Printer: {}", e))?;
@@ -130,12 +131,43 @@ async fn list_printers() -> Result<PrinterList, String> {
 
 // ─── TV Window management ───
 
+/// Only allow the TV page of the kiosk's configured server: http(s), same
+/// origin as `server_url`, and a path under `/tv/`.
+fn validate_tv_url(url: &str, server_url: &str) -> Result<url::Url, String> {
+    let parsed: url::Url = url.parse().map_err(|e| format!("URL không hợp lệ: {}", e))?;
+    let server: url::Url = server_url
+        .parse()
+        .map_err(|e| format!("Địa chỉ server không hợp lệ: {}", e))?;
+    for u in [&parsed, &server] {
+        if !matches!(u.scheme(), "http" | "https") {
+            return Err("Chỉ hỗ trợ địa chỉ http/https".to_string());
+        }
+    }
+    if parsed.origin() != server.origin() {
+        return Err("Địa chỉ TV phải thuộc server đã cấu hình".to_string());
+    }
+    if !parsed.username().is_empty() || parsed.password().is_some() {
+        return Err("URL không hợp lệ".to_string());
+    }
+    if !parsed.path().starts_with("/tv/") {
+        return Err("Đường dẫn TV không hợp lệ".to_string());
+    }
+    Ok(parsed)
+}
+
 #[tauri::command]
-async fn open_tv_window(app: tauri::AppHandle, url: String, monitor_index: Option<usize>) -> Result<(), String> {
+async fn open_tv_window(
+    app: tauri::AppHandle,
+    url: String,
+    server_url: String,
+    monitor_index: Option<usize>,
+) -> Result<(), String> {
     use tauri::WebviewUrl;
     use tauri::WebviewWindowBuilder;
 
     info!("open_tv_window: url={}, monitor_index={:?}", url, monitor_index);
+    // Validate before touching any existing window.
+    let parsed_url = validate_tv_url(&url, &server_url)?;
 
     // Đóng TV window cũ nếu có
     if let Some(existing) = app.get_webview_window("tv-display") {
@@ -143,8 +175,6 @@ async fn open_tv_window(app: tauri::AppHandle, url: String, monitor_index: Optio
         // Đợi window cũ đóng hoàn toàn
         tokio::time::sleep(std::time::Duration::from_millis(200)).await;
     }
-
-    let parsed_url: url::Url = url.parse().map_err(|e| format!("URL không hợp lệ: {}", e))?;
 
     // Thu thập thông tin monitor trước (trên main thread)
     let monitor_info = if let Some(idx) = monitor_index {
@@ -160,7 +190,8 @@ async fn open_tv_window(app: tauri::AppHandle, url: String, monitor_index: Optio
         } else { None }
     } else { None };
 
-    // Build window
+    // Build window. "tv-display" is not listed in any capability, so the
+    // remote TV page gets no IPC access to app/plugin commands.
     let mut builder = WebviewWindowBuilder::new(&app, "tv-display", WebviewUrl::External(parsed_url))
         .title("TV Display")
         .decorations(false);
@@ -209,6 +240,22 @@ fn close_tv_window(app: tauri::AppHandle) -> Result<(), String> {
 
 // ─── Print ticket ───
 
+const MAX_PRINTER_NAME_LEN: usize = 200;
+
+/// Reject printer names that are empty, too long or contain control chars.
+fn validate_printer_name(name: &str) -> Result<(), String> {
+    if name.trim().is_empty() {
+        return Err("Tên máy in trống".to_string());
+    }
+    if name.chars().count() > MAX_PRINTER_NAME_LEN {
+        return Err("Tên máy in quá dài".to_string());
+    }
+    if name.chars().any(|c| c.is_control()) {
+        return Err("Tên máy in chứa ký tự không hợp lệ".to_string());
+    }
+    Ok(())
+}
+
 #[tauri::command]
 fn print_ticket(
     ticket_number: String,
@@ -217,9 +264,13 @@ fn print_ticket(
     datetime: String,
     printer_name: Option<String>,
 ) -> Result<String, String> {
-    let printer = printer_name.unwrap_or_else(|| "default".to_string());
+    // None / empty => system default printer
+    let printer: Option<String> = printer_name.filter(|p| !p.is_empty());
+    if let Some(p) = &printer {
+        validate_printer_name(p)?;
+    }
     info!(
-        "print_ticket: printer={}, ticket={}, org={}, waiting={}, datetime={}",
+        "print_ticket: printer={:?}, ticket={}, org={}, waiting={}, datetime={}",
         printer, ticket_number, org_name, waiting_count, datetime
     );
 
@@ -252,15 +303,20 @@ fn print_ticket(
         use std::os::windows::process::CommandExt;
         const CREATE_NO_WINDOW: u32 = 0x08000000;
 
-        let file_path_str = file_path.to_string_lossy().to_string();
-        let ps_script = if printer == "default" {
-            format!(r#"Get-Content -Path "{}" | Out-Printer"#, file_path_str)
-        } else {
-            format!(r#"Get-Content -Path "{}" | Out-Printer -Name "{}""#, file_path_str, printer)
+        // The script text is a constant: the file path and printer name are
+        // passed as environment variables, which PowerShell binds as plain
+        // string arguments (never parsed as code).
+        let mut cmd = std::process::Command::new("powershell");
+        cmd.env("BAMSO_PRINT_FILE", &file_path);
+        let ps_script = match &printer {
+            None => "Get-Content -LiteralPath $env:BAMSO_PRINT_FILE | Out-Printer",
+            Some(p) => {
+                cmd.env("BAMSO_PRINTER", p);
+                "Get-Content -LiteralPath $env:BAMSO_PRINT_FILE | Out-Printer -Name $env:BAMSO_PRINTER"
+            }
         };
 
-        std::process::Command::new("powershell")
-            .args(["-NoProfile", "-Command", &ps_script])
+        cmd.args(["-NoProfile", "-NonInteractive", "-Command", ps_script])
             .creation_flags(CREATE_NO_WINDOW)
             .spawn()
             .map_err(|e| {
@@ -272,8 +328,9 @@ fn print_ticket(
     #[cfg(not(target_os = "windows"))]
     {
         let mut cmd = std::process::Command::new("lp");
-        if printer != "default" {
-            cmd.args(["-d", &printer]);
+        if let Some(p) = &printer {
+            // argv, no shell; `-d` consumes the next argument as its value
+            cmd.arg("-d").arg(p);
         }
         cmd.arg(&file_path);
         cmd.spawn().map_err(|e| {
@@ -288,21 +345,52 @@ fn print_ticket(
 // Cache ding.mp3 bytes after first download
 static DING_CACHE: OnceLock<Vec<u8>> = OnceLock::new();
 
+/// Accept only absolute http(s) server base URLs.
+fn validate_http_url(raw: &str) -> Result<url::Url, String> {
+    let u: url::Url = raw.parse().map_err(|e| format!("URL không hợp lệ: {}", e))?;
+    if !matches!(u.scheme(), "http" | "https") {
+        return Err("Chỉ hỗ trợ địa chỉ http/https".to_string());
+    }
+    Ok(u)
+}
+
+const MAX_DING_BYTES: usize = 2 * 1024 * 1024;
+
+fn download_ding(server_url: &str) -> Result<Vec<u8>, String> {
+    let base = validate_http_url(server_url)?;
+    let url = base
+        .join("/sounds/ding.mp3")
+        .map_err(|e| format!("URL không hợp lệ: {}", e))?;
+    let client = reqwest::blocking::Client::builder()
+        .timeout(std::time::Duration::from_secs(10))
+        .build()
+        .map_err(|e| format!("HTTP client error: {}", e))?;
+    let resp = client.get(url).send().map_err(|e| format!("ding request error: {}", e))?;
+    if !resp.status().is_success() {
+        return Err(format!("ding HTTP {}", resp.status()));
+    }
+    let bytes = resp.bytes().map_err(|e| format!("ding read error: {}", e))?;
+    if bytes.is_empty() || bytes.len() > MAX_DING_BYTES {
+        return Err("ding.mp3 không hợp lệ".to_string());
+    }
+    Ok(bytes.to_vec())
+}
+
 #[tauri::command]
 async fn play_ding(server_url: String) -> Result<(), String> {
+    validate_http_url(&server_url)?;
     tokio::task::spawn_blocking(move || {
-        let bytes = DING_CACHE.get_or_init(|| {
-            let url = format!("{}/sounds/ding.mp3", server_url);
-            reqwest::blocking::get(&url)
-                .and_then(|r| r.bytes())
-                .map(|b| b.to_vec())
-                .unwrap_or_default()
-        });
-
-        if bytes.is_empty() {
-            error!("play_ding: failed to load ding.mp3");
-            return Err("Failed to load ding.mp3".to_string());
-        }
+        // Only cache a successful download so a transient failure can retry.
+        let bytes = match DING_CACHE.get() {
+            Some(b) => b,
+            None => {
+                let downloaded = download_ding(&server_url).map_err(|e| {
+                    error!("play_ding: failed to load ding.mp3: {}", e);
+                    e
+                })?;
+                DING_CACHE.get_or_init(|| downloaded)
+            }
+        };
         debug!("play_ding: loaded {} bytes", bytes.len());
 
         let (_stream, stream_handle) = rodio::OutputStream::try_default()
@@ -326,16 +414,28 @@ async fn play_ding(server_url: String) -> Result<(), String> {
 
 // ─── Google TTS with file cache ───
 
-/// Get the TTS cache directory: custom path or <app_data_dir>/tts_cache/
+/// A user-chosen TTS directory is only used if it is an absolute path to an
+/// existing directory; it is never created.
+fn usable_custom_dir(custom_dir: Option<&str>) -> Option<PathBuf> {
+    let dir = custom_dir.map(str::trim).filter(|d| !d.is_empty())?;
+    let path = PathBuf::from(dir);
+    if path.is_absolute() && path.is_dir() {
+        Some(path)
+    } else {
+        warn!("TTS custom dir ignored (not an existing absolute directory): {}", dir);
+        None
+    }
+}
+
+/// Get the TTS cache directory: valid custom dir, else the app-owned
+/// <app_data_dir>/tts_cache/ (the only directory this code creates).
 fn get_tts_cache_dir(app: &tauri::AppHandle, custom_dir: Option<&str>) -> Result<PathBuf, String> {
-    let cache_dir = match custom_dir {
-        Some(dir) if !dir.trim().is_empty() => PathBuf::from(dir.trim()),
-        _ => {
-            let data_dir = app.path().app_data_dir()
-                .map_err(|e| format!("Failed to get app data dir: {}", e))?;
-            data_dir.join("tts_cache")
-        }
-    };
+    if let Some(dir) = usable_custom_dir(custom_dir) {
+        return Ok(dir);
+    }
+    let cache_dir = app.path().app_data_dir()
+        .map_err(|e| format!("Failed to get app data dir: {}", e))?
+        .join("tts_cache");
     std::fs::create_dir_all(&cache_dir)
         .map_err(|e| format!("Failed to create dir {}: {}", cache_dir.display(), e))?;
     Ok(cache_dir)
@@ -348,9 +448,13 @@ fn text_to_filename(text: &str) -> String {
         .chars()
         .map(|c| if c.is_alphanumeric() || c == '_' { c } else { '_' })
         .collect();
-    // Trim trailing underscores and limit length
-    let name = name.trim_matches('_');
-    let name = if name.len() > 60 { &name[..60] } else { name };
+    // Trim underscores and limit length on char boundaries (Vietnamese text
+    // is multi-byte UTF-8, so byte slicing could panic).
+    let name: String = name.trim_matches('_').chars().take(60).collect();
+    let name = name.trim_end_matches('_');
+    if name.is_empty() {
+        return "_.mp3".to_string();
+    }
     format!("{}.mp3", name)
 }
 
@@ -556,7 +660,7 @@ pub fn run() {
                     Target::new(TargetKind::Webview),
                 ])
                 .timezone_strategy(TimezoneStrategy::UseLocal)
-                .rotation_strategy(RotationStrategy::KeepAll)
+                .rotation_strategy(RotationStrategy::KeepSome(5))
                 .max_file_size(5_000_000)
                 .build(),
         )
@@ -582,4 +686,80 @@ pub fn run() {
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn filename_vietnamese_long_does_not_panic() {
+        // 2-3 byte chars; byte index 60 falls inside a char boundary.
+        let text = "Mời số đến quầy tiếp nhận hồ sơ đăng ký khám chữa bệnh ưu tiên người cao tuổi";
+        let f = text_to_filename(text);
+        assert!(f.ends_with(".mp3"));
+        let stem = f.trim_end_matches(".mp3");
+        assert!(stem.chars().count() <= 60);
+        assert!(stem.starts_with("mời_số_đến_quầy"));
+        assert!(!stem.contains('/') && !stem.contains('\\') && !stem.contains(".."));
+    }
+
+    #[test]
+    fn filename_short_and_symbols() {
+        assert_eq!(text_to_filename("Quầy 1"), "quầy_1.mp3");
+        assert_eq!(text_to_filename("0 0 1"), "0_0_1.mp3");
+        assert_eq!(text_to_filename("../../etc/passwd"), "etc_passwd.mp3");
+        assert_eq!(text_to_filename("..."), "_.mp3");
+        let long = "ệ".repeat(100);
+        assert_eq!(text_to_filename(&long).trim_end_matches(".mp3").chars().count(), 60);
+    }
+
+    #[test]
+    fn printer_name_validation() {
+        assert!(validate_printer_name("EPSON TM-T82 Receipt").is_ok());
+        assert!(validate_printer_name("Máy in quầy 1").is_ok());
+        // Former PowerShell injection payload is just an odd (but harmless) name now
+        // since it is passed via env var; control chars are still rejected.
+        assert!(validate_printer_name("x\"; Start-Process calc; \"").is_ok());
+        assert!(validate_printer_name("").is_err());
+        assert!(validate_printer_name("   ").is_err());
+        assert!(validate_printer_name("a\nb").is_err());
+        assert!(validate_printer_name("a\rb").is_err());
+        assert!(validate_printer_name("a\u{0}b").is_err());
+        assert!(validate_printer_name(&"p".repeat(200)).is_ok());
+        assert!(validate_printer_name(&"p".repeat(201)).is_err());
+    }
+
+    #[test]
+    fn tv_url_validation() {
+        let s = "http://192.168.1.10:3000";
+        assert!(validate_tv_url("http://192.168.1.10:3000/tv/1", s).is_ok());
+        assert!(validate_tv_url("http://192.168.1.10:3000/tv/1", "http://192.168.1.10:3000/").is_ok());
+        assert!(validate_tv_url("http://evil.example:3000/tv/1", s).is_err());
+        assert!(validate_tv_url("http://192.168.1.10:3001/tv/1", s).is_err());
+        assert!(validate_tv_url("http://192.168.1.10:3000/admin", s).is_err());
+        assert!(validate_tv_url("file:///etc/passwd", "file:///").is_err());
+        assert!(validate_tv_url("javascript:alert(1)", s).is_err());
+        assert!(validate_tv_url("http://u:p@192.168.1.10:3000/tv/1", s).is_err());
+    }
+
+    #[test]
+    fn http_url_validation() {
+        assert!(validate_http_url("http://localhost:3000").is_ok());
+        assert!(validate_http_url("https://q.example").is_ok());
+        assert!(validate_http_url("file:///C:/x").is_err());
+        assert!(validate_http_url("smb://host/share").is_err());
+    }
+
+    #[test]
+    fn custom_dir_rules() {
+        assert!(usable_custom_dir(None).is_none());
+        assert!(usable_custom_dir(Some("  ")).is_none());
+        assert!(usable_custom_dir(Some("relative/dir")).is_none());
+        let tmp = std::env::temp_dir();
+        assert_eq!(usable_custom_dir(tmp.to_str()), Some(tmp.clone()));
+        let missing = tmp.join("bamso-does-not-exist-xyz");
+        assert!(usable_custom_dir(missing.to_str()).is_none());
+        assert!(!missing.exists());
+    }
 }

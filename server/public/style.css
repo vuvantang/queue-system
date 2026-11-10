@@ -15,18 +15,45 @@
   --accent-green-dark: #14531b;
   --accent-gold: #b8860b;
   --accent-gold-light: #d4a017;
+  /* Gold dark enough to read as text on the pale green surfaces (>= 4.5:1) */
+  --gold-ink: #8a6508;
+  --gold-wash: #fbe4a2;
   --accent-red: #dc2626;
   --serving-bg: #dcefd8;
   --border-color: rgba(27, 138, 42, 0.15);
+
+  --font-sans: 'Be Vietnam Pro', 'Segoe UI', system-ui, sans-serif;
+
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  /* Softer deceleration for the number wipe, so the sweep is visible */
+  --ease-out-soft: cubic-bezier(0.33, 1, 0.68, 1);
+  --ease-in: cubic-bezier(0.7, 0, 0.84, 0);
+  --dur-fast: 140ms;
+  --dur-base: 220ms;
+  --dur-slow: 420ms;
+  --dur-focal: 650ms;
+  /* How long a called ticket keeps its gold highlight (keep in sync with app.js) */
+  --dur-called: 16s;
+}
+
+::selection {
+  background: rgba(27, 138, 42, 0.22);
+  color: var(--accent-green-dark);
+}
+
+:focus-visible {
+  outline: 3px solid var(--accent-gold-light);
+  outline-offset: 2px;
 }
 
 body {
-  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  font-family: var(--font-sans);
   background: var(--bg-primary);
   color: var(--text-primary);
   overflow: hidden;
   width: 100vw;
   height: 100vh;
+  -webkit-font-smoothing: antialiased;
 }
 
 #app {
@@ -41,9 +68,9 @@ body {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 15px 40px;
+  padding: 14px 40px;
   background: linear-gradient(135deg, #1b6d24, #22882e);
-  min-height: 80px;
+  min-height: 84px;
   border-bottom: 3px solid var(--accent-gold);
 }
 
@@ -62,26 +89,46 @@ body {
 
 #header h1 {
   font-size: 36px;
-  font-weight: 700;
-  letter-spacing: 3px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
   color: #ffffff;
-  text-shadow: 0 1px 4px rgba(0,0,0,0.2);
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
 }
 
+/* Connection pill: two states that differ in colour, fill and wording */
 #connection-status {
-  font-size: 14px;
-  padding: 6px 16px;
-  border-radius: 20px;
-  background: rgba(255,255,255,0.2);
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 17px;
+  font-weight: 600;
+  padding: 8px 18px 8px 14px;
+  border-radius: 999px;
+  background: rgba(8, 40, 12, 0.32);
   color: #fff;
+  transition: background-color var(--dur-base) var(--ease-out), color var(--dur-base) var(--ease-out);
+}
+
+#connection-status::before {
+  content: '';
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #8ee59a;
+  transition: background-color var(--dur-base) var(--ease-out);
 }
 
 #connection-status.connected {
-  color: #fde68a;
+  color: #f2fbf3;
 }
 
 #connection-status.disconnected {
-  color: #fca5a5;
+  background: #b42318;
+  color: #fff;
+}
+
+#connection-status.disconnected::before {
+  background: #fff;
 }
 
 /* Main */
@@ -96,18 +143,24 @@ body {
 /* Serving Section */
 #serving-section {
   background: var(--bg-secondary);
-  padding: 30px;
+  padding: 28px 32px 32px;
   display: flex;
   flex-direction: column;
-  border-right: 2px solid var(--border-color);
+  border-right: 1px solid var(--border-color);
+  min-height: 0;
+}
+
+#serving-section h2,
+#waiting-section h2 {
+  font-size: 28px;
+  font-weight: 800;
+  margin-bottom: 20px;
+  text-align: center;
+  letter-spacing: 0.08em;
 }
 
 #serving-section h2 {
-  font-size: 28px;
   color: var(--accent-green-dark);
-  margin-bottom: 20px;
-  text-align: center;
-  letter-spacing: 2px;
 }
 
 #serving-list {
@@ -118,92 +171,146 @@ body {
   overflow: hidden;
 }
 
+.empty-state {
+  color: var(--text-secondary);
+  text-align: center;
+  font-size: 24px;
+  font-weight: 500;
+  margin-top: 40px;
+}
+
 .serving-card {
+  position: relative;
+  isolation: isolate;
   background: linear-gradient(135deg, #d4edda, #c3e6cb);
   border-radius: 16px;
   padding: 24px 32px;
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 24px;
   border: 2px solid rgba(27, 138, 42, 0.2);
-  transition: all 0.3s ease;
 }
 
-.serving-card.flash {
-  animation: flashCard 0.8s ease-in-out infinite;
-  border-color: var(--accent-gold);
-  box-shadow: 0 0 30px rgba(212, 160, 23, 0.4);
+.serving-card > * {
+  position: relative;
+  z-index: 1;
+  min-width: 0;
 }
 
-@keyframes flashCard {
-  0%, 100% {
-    background: linear-gradient(135deg, #fef3c7, #fde68a);
-    border-color: #d4a017;
-  }
-  50% {
-    background: linear-gradient(135deg, #d4edda, #c3e6cb);
-    border-color: rgba(27, 138, 42, 0.2);
-  }
+/* Gold highlight layer for a freshly called ticket. Painted once,
+   only its opacity animates. */
+.serving-card::before {
+  content: '';
+  position: absolute;
+  inset: -2px;
+  z-index: 0;
+  border-radius: inherit;
+  background: linear-gradient(135deg, #fdf1cc, var(--gold-wash));
+  border: 3px solid var(--accent-gold-light);
+  opacity: 0;
+  pointer-events: none;
 }
 
 .serving-number {
   font-size: 72px;
   font-weight: 800;
-  color: var(--accent-gold);
+  color: var(--gold-ink);
   line-height: 1;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
 }
 
 .serving-counter {
   font-size: 28px;
   color: var(--text-secondary);
   text-align: right;
+  flex-shrink: 0;
 }
 
 .serving-counter-name {
   font-size: 32px;
   color: var(--accent-green-dark);
-  font-weight: 600;
+  font-weight: 700;
+}
+
+.serving-service-type {
+  font-size: 18px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  margin-top: 6px;
+}
+
+/* ===== Focal moment: a ticket is called / recalled =====
+   app.js sets --called-offset (a negative delay) so the sequence stays
+   in phase if the card is re-rendered mid-animation. */
+.serving-card.is-called::before {
+  animation: calledGlow var(--dur-called) linear var(--called-offset, 0ms) both;
+}
+
+.serving-card.is-called .serving-number {
+  animation: numberWipe var(--dur-focal) var(--ease-out-soft) var(--called-offset, 0ms) both;
+}
+
+.serving-card.is-called .serving-service-type,
+.serving-card.is-called .serving-counter {
+  animation: calledDetails var(--dur-slow) var(--ease-out) calc(var(--called-offset, 0ms) + 260ms) both;
+}
+
+/* Arrives fast, holds for a few seconds, then decays slowly */
+@keyframes calledGlow {
+  0%   { opacity: 0; }
+  2%   { opacity: 1; }
+  40%  { opacity: 1; animation-timing-function: cubic-bezier(0.45, 0, 0.55, 1); }
+  100% { opacity: 0; }
+}
+
+@keyframes numberWipe {
+  from { clip-path: inset(-10% 100% -10% 0); transform: translateX(-12px); }
+  to   { clip-path: inset(-10% 0 -10% 0); transform: none; }
+}
+
+@keyframes calledDetails {
+  from { opacity: 0; }
+  to   { opacity: 1; }
 }
 
 /* Dynamic sizing based on serving item count */
 #serving-list.size-lg { gap: 16px; }
 #serving-list.size-lg .serving-card { padding: 24px 32px; }
-#serving-list.size-lg .serving-number { font-size: 72px; }
-#serving-list.size-lg .serving-counter-name { font-size: 32px; }
-#serving-list.size-lg .serving-service-type { font-size: 18px; }
+#serving-list.size-lg .serving-number { font-size: 80px; }
+#serving-list.size-lg .serving-counter-name { font-size: 34px; }
+#serving-list.size-lg .serving-service-type { font-size: 20px; }
 
 #serving-list.size-md { gap: 12px; }
-#serving-list.size-md .serving-card { padding: 16px 24px; border-radius: 12px; }
-#serving-list.size-md .serving-number { font-size: 52px; }
-#serving-list.size-md .serving-counter-name { font-size: 26px; }
-#serving-list.size-md .serving-service-type { font-size: 15px; }
+#serving-list.size-md .serving-card { padding: 16px 28px; border-radius: 14px; }
+#serving-list.size-md .serving-number { font-size: 60px; }
+#serving-list.size-md .serving-counter-name { font-size: 30px; }
+#serving-list.size-md .serving-service-type { font-size: 17px; }
 
 #serving-list.size-sm { gap: 8px; }
-#serving-list.size-sm .serving-card { padding: 10px 18px; border-radius: 10px; }
-#serving-list.size-sm .serving-number { font-size: 40px; }
-#serving-list.size-sm .serving-counter-name { font-size: 22px; }
-#serving-list.size-sm .serving-service-type { font-size: 13px; }
+#serving-list.size-sm .serving-card { padding: 10px 20px; border-radius: 12px; }
+#serving-list.size-sm .serving-number { font-size: 44px; }
+#serving-list.size-sm .serving-counter-name { font-size: 24px; }
+#serving-list.size-sm .serving-service-type { font-size: 14px; margin-top: 4px; }
 
 #serving-list.size-xs { gap: 6px; }
-#serving-list.size-xs .serving-card { padding: 8px 14px; border-radius: 8px; }
-#serving-list.size-xs .serving-number { font-size: 32px; }
-#serving-list.size-xs .serving-counter-name { font-size: 18px; }
-#serving-list.size-xs .serving-service-type { font-size: 12px; }
+#serving-list.size-xs .serving-card { padding: 8px 16px; border-radius: 10px; }
+#serving-list.size-xs .serving-number { font-size: 34px; }
+#serving-list.size-xs .serving-counter-name { font-size: 19px; }
+#serving-list.size-xs .serving-service-type { font-size: 12px; margin-top: 2px; }
 
 /* Waiting Section */
 #waiting-section {
   background: var(--bg-primary);
-  padding: 30px;
+  padding: 28px 32px 32px;
   display: flex;
   flex-direction: column;
+  min-height: 0;
 }
 
 #waiting-section h2 {
-  font-size: 28px;
-  color: var(--accent-gold);
-  margin-bottom: 20px;
-  text-align: center;
-  letter-spacing: 2px;
+  color: var(--gold-ink);
 }
 
 #waiting-list {
@@ -216,12 +323,6 @@ body {
   padding-bottom: 10px;
 }
 
-.serving-service-type {
-  font-size: 18px;
-  color: var(--text-secondary);
-  margin-top: 4px;
-}
-
 .waiting-group {
   width: 100%;
   margin-bottom: 16px;
@@ -231,8 +332,8 @@ body {
   font-size: 20px;
   font-weight: 700;
   color: var(--accent-green-dark);
-  margin-bottom: 8px;
-  padding-bottom: 4px;
+  margin-bottom: 10px;
+  padding-bottom: 6px;
   border-bottom: 2px solid var(--border-color);
 }
 
@@ -248,50 +349,83 @@ body {
   border-radius: 12px;
   padding: 14px 24px;
   font-size: 32px;
-  font-weight: 700;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  font-variant-numeric: tabular-nums;
   color: var(--text-primary);
   min-width: 120px;
   text-align: center;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+  box-shadow: 0 2px 8px rgba(20, 83, 27, 0.06);
+}
+
+/* A newly issued ticket settles in, carrying a brief gold wash */
+.waiting-badge.is-new {
+  animation:
+    badgeEnter var(--dur-slow) var(--ease-out) both,
+    badgeWash 2.4s var(--ease-out) both;
+}
+
+/* A called ticket leaves the waiting list (faster than it arrived) */
+.waiting-badge.is-leaving {
+  animation: badgeLeave var(--dur-base) var(--ease-in) both;
+}
+
+@keyframes badgeEnter {
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: none; }
+}
+
+@keyframes badgeWash {
+  from { background-color: var(--gold-wash); border-color: var(--accent-gold-light); }
+  to   { background-color: var(--bg-secondary); border-color: rgba(27, 138, 42, 0.15); }
+}
+
+@keyframes badgeLeave {
+  to { opacity: 0; transform: scale(0.9); }
 }
 
 /* Dynamic sizing for waiting list */
-#waiting-list.wait-lg .waiting-group { margin-bottom: 16px; }
-#waiting-list.wait-lg .waiting-group-header { font-size: 20px; margin-bottom: 8px; }
+#waiting-list.wait-lg .waiting-group { margin-bottom: 18px; }
+#waiting-list.wait-lg .waiting-group-header { font-size: 21px; margin-bottom: 10px; }
 #waiting-list.wait-lg .waiting-group-badges { gap: 10px; }
-#waiting-list.wait-lg .waiting-badge { font-size: 32px; padding: 14px 24px; min-width: 120px; border-radius: 12px; }
+#waiting-list.wait-lg .waiting-badge { font-size: 34px; padding: 14px 24px; min-width: 124px; border-radius: 12px; }
 
-#waiting-list.wait-md .waiting-group { margin-bottom: 10px; }
-#waiting-list.wait-md .waiting-group-header { font-size: 17px; margin-bottom: 6px; }
+#waiting-list.wait-md .waiting-group { margin-bottom: 12px; }
+#waiting-list.wait-md .waiting-group-header { font-size: 18px; margin-bottom: 7px; }
 #waiting-list.wait-md .waiting-group-badges { gap: 8px; }
-#waiting-list.wait-md .waiting-badge { font-size: 24px; padding: 10px 18px; min-width: 90px; border-radius: 10px; }
+#waiting-list.wait-md .waiting-badge { font-size: 26px; padding: 10px 18px; min-width: 96px; border-radius: 10px; }
 
 #waiting-list.wait-sm .waiting-group { margin-bottom: 8px; }
-#waiting-list.wait-sm .waiting-group-header { font-size: 15px; margin-bottom: 4px; }
-#waiting-list.wait-sm .waiting-group-badges { gap: 6px; }
-#waiting-list.wait-sm .waiting-badge { font-size: 20px; padding: 8px 14px; min-width: 72px; border-radius: 8px; }
+#waiting-list.wait-sm .waiting-group-header { font-size: 17px; margin-bottom: 6px; }
+#waiting-list.wait-sm .waiting-group-badges { gap: 7px; }
+#waiting-list.wait-sm .waiting-badge { font-size: 24px; padding: 8px 14px; min-width: 84px; border-radius: 8px; }
 
-#waiting-list.wait-xs .waiting-group { margin-bottom: 6px; }
-#waiting-list.wait-xs .waiting-group-header { font-size: 13px; margin-bottom: 3px; }
-#waiting-list.wait-xs .waiting-group-badges { gap: 5px; }
-#waiting-list.wait-xs .waiting-badge { font-size: 16px; padding: 6px 10px; min-width: 60px; border-radius: 6px; }
+#waiting-list.wait-xs .waiting-group { margin-bottom: 8px; }
+#waiting-list.wait-xs .waiting-group-header { font-size: 15px; margin-bottom: 5px; }
+#waiting-list.wait-xs .waiting-group-badges { gap: 6px; }
+#waiting-list.wait-xs .waiting-badge { font-size: 20px; padding: 6px 12px; min-width: 70px; border-radius: 7px; }
 
 /* Stats */
 #stats {
   display: flex;
   justify-content: space-around;
-  padding: 20px;
-  margin-top: 10px;
+  align-items: baseline;
+  padding: 18px 20px;
+  margin-top: 12px;
   background: var(--bg-secondary);
   border-radius: 12px;
   font-size: 22px;
+  font-weight: 500;
   color: var(--text-secondary);
   border: 1px solid var(--border-color);
 }
 
 #stats strong {
   color: var(--accent-green-dark);
-  font-size: 28px;
+  font-size: 30px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  margin-left: 4px;
 }
 
 /* Footer */
@@ -302,8 +436,16 @@ body {
   padding: 12px 40px;
   background: var(--bg-secondary);
   font-size: 20px;
+  font-weight: 500;
   color: var(--text-secondary);
-  border-top: 2px solid var(--border-color);
+  border-top: 1px solid var(--border-color);
+}
+
+#current-time {
+  font-size: 26px;
+  font-weight: 700;
+  color: var(--accent-green-dark);
+  font-variant-numeric: tabular-nums;
 }
 
 /* Announcement Overlay */
@@ -313,12 +455,12 @@ body {
   left: 0;
   width: 100%;
   height: 100%;
-  background: rgba(20, 83, 27, 0.92);
+  background: rgba(20, 83, 27, 0.94);
   display: flex;
   align-items: center;
   justify-content: center;
   z-index: 1000;
-  animation: fadeInOverlay 0.3s ease;
+  animation: fadeInOverlay var(--dur-base) var(--ease-out);
 }
 
 #announcement.hidden { display: none; }
@@ -330,31 +472,34 @@ body {
 
 .announcement-content {
   text-align: center;
-  animation: scaleIn 0.4s ease;
+  animation: overlayContentIn var(--dur-slow) var(--ease-out);
 }
 
-@keyframes scaleIn {
-  from { transform: scale(0.5); opacity: 0; }
-  to { transform: scale(1); opacity: 1; }
+@keyframes overlayContentIn {
+  from { transform: scale(0.96); opacity: 0; }
+  to { transform: none; opacity: 1; }
 }
 
 .announcement-label {
   font-size: 48px;
+  font-weight: 700;
   color: #fde68a;
-  letter-spacing: 5px;
+  letter-spacing: 0.1em;
   margin-bottom: 20px;
 }
 
 #announcement-number {
   font-size: 160px;
-  font-weight: 900;
+  font-weight: 800;
   color: #fde68a;
-  text-shadow: 0 0 60px rgba(253, 230, 138, 0.5);
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
   line-height: 1.1;
 }
 
 #announcement-counter {
   font-size: 52px;
+  font-weight: 600;
   color: #fff;
   margin-top: 20px;
 }
@@ -381,7 +526,7 @@ body {
   max-width: 100%;
   max-height: 100%;
   object-fit: contain;
-  transition: opacity 0.5s ease;
+  transition: opacity 500ms var(--ease-out);
 }
 
 #ad-slide-img.fade-out {
@@ -391,4 +536,40 @@ body {
 /* Scrollbar */
 ::-webkit-scrollbar { width: 6px; }
 ::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: rgba(27, 138, 42, 0.2); border-radius: 3px; }
+::-webkit-scrollbar-thumb { background: rgba(27, 138, 42, 0.25); border-radius: 3px; }
+
+/* Reduced motion: drop movement (wipe slide, badge travel, scale), keep the
+   opacity/colour changes that tell viewers which ticket was just called. */
+@media (prefers-reduced-motion: reduce) {
+  .serving-card.is-called .serving-number {
+    animation-name: calledDetails;
+    animation-duration: 200ms;
+  }
+  .serving-card.is-called .serving-service-type,
+  .serving-card.is-called .serving-counter {
+    animation-duration: 200ms;
+    animation-delay: var(--called-offset, 0ms);
+  }
+  .waiting-badge.is-new {
+    animation:
+      calledDetails 200ms var(--ease-out) both,
+      badgeWash 2.4s var(--ease-out) both;
+  }
+  .waiting-badge.is-leaving {
+    animation: badgeFade var(--dur-fast) linear both;
+  }
+  .announcement-content {
+    animation: fadeInOverlay 200ms var(--ease-out);
+  }
+}
+
+@keyframes badgeFade {
+  to { opacity: 0; }
+}
+
+/* Fixed-width digit cells for the footer clock (font lacks tabular figures) */
+.clock-digit {
+  display: inline-block;
+  width: 0.64em;
+  text-align: center;
+}

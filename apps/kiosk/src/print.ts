@@ -1,11 +1,8 @@
 // Print ticket using iframe + window.print fallback
 // Tauri Rust thermal printer integration will be added separately
 
-export function printTicket(ticketNumber: string, orgName: string, waitingCount: number): void {
-  const now = new Date();
-  const datetime = now.toLocaleString('vi-VN');
-
-  const html = `
+// Constant print template; dynamic values are filled in with textContent below.
+const PRINT_TEMPLATE = `
     <!DOCTYPE html>
     <html>
     <head>
@@ -56,15 +53,19 @@ export function printTicket(ticketNumber: string, orgName: string, waitingCount:
       </style>
     </head>
     <body>
-      <div class="org-name">${orgName}</div>
+      <div class="org-name"></div>
       <div class="label">SỐ THỨ TỰ</div>
-      <div class="ticket-number">${ticketNumber}</div>
-      <div class="datetime">${datetime}</div>
-      <div class="waiting">Đang chờ: ${waitingCount} người</div>
+      <div class="ticket-number"></div>
+      <div class="datetime"></div>
+      <div class="waiting"></div>
       <div class="hint">Vui lòng chờ gọi số</div>
     </body>
     </html>
   `;
+
+export function printTicket(ticketNumber: string, orgName: string, waitingCount: number): void {
+  const now = new Date();
+  const datetime = now.toLocaleString('vi-VN');
 
   // Create hidden iframe for printing
   const iframe = document.createElement('iframe');
@@ -77,8 +78,17 @@ export function printTicket(ticketNumber: string, orgName: string, waitingCount:
   const iframeDoc = iframe.contentDocument || iframe.contentWindow?.document;
   if (iframeDoc) {
     iframeDoc.open();
-    iframeDoc.write(html);
+    iframeDoc.write(PRINT_TEMPLATE);
     iframeDoc.close();
+
+    const setText = (selector: string, text: string) => {
+      const el = iframeDoc.querySelector(selector);
+      if (el) el.textContent = text;
+    };
+    setText('.org-name', orgName);
+    setText('.ticket-number', ticketNumber);
+    setText('.datetime', datetime);
+    setText('.waiting', `Đang chờ: ${waitingCount} người`);
 
     iframe.onload = () => {
       iframe.contentWindow?.print();

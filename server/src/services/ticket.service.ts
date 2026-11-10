@@ -12,20 +12,30 @@ export function createTicket(serviceTypeId: number): Ticket {
 
     const today = new Date().toLocaleDateString('en-CA');
 
-    const st = db.prepare('SELECT * FROM service_types WHERE id = ? AND is_active = 1').get(serviceTypeId) as ServiceType | undefined;
+    const st = db.prepare(
+      `SELECT st.* FROM service_types st
+       JOIN areas a ON a.id = st.area_id AND a.is_active = 1
+       WHERE st.id = ? AND st.is_active = 1`
+    ).get(serviceTypeId) as ServiceType | undefined;
     if (!st) throw new Error('Loại dịch vụ không tồn tại hoặc đã tắt');
 
-    // Derive next number from today's ticket count in this area
-    const countResult = db.prepare(
-      `SELECT COUNT(*) as count FROM tickets WHERE area_id = ? AND date(created_at) = ?`
-    ).get(st.area_id, today) as { count: number };
-    const nextNumber = countResult.count + 1;
+    const area = db.prepare('SELECT * FROM areas WHERE id = ?').get(st.area_id) as Area;
+
+    // Next number = highest number issued today in this area + 1 (never a count, so deletions
+    // cannot cause a number to be handed out twice). The per-area counter guards against reuse
+    // when today's tickets were deleted (e.g. with a service type) without an explicit reset.
+    const maxResult = db.prepare(
+      `SELECT MAX(CAST(ticket_number AS INTEGER)) as max_num FROM tickets WHERE area_id = ? AND date(created_at) = ?`
+    ).get(st.area_id, today) as { max_num: number | null };
+    let nextNumber = (maxResult.max_num ?? 0) + 1;
+    if (area.number_date === today && area.next_number > nextNumber) nextNumber = area.next_number;
     const ticketNumber = formatTicketNumber(st.prefix, nextNumber);
 
     const result = db.prepare(
       `INSERT INTO tickets (ticket_number, service_type_id, area_id, status)
        VALUES (?, ?, ?, 'waiting')`
     ).run(ticketNumber, st.id, st.area_id);
+    db.prepare('UPDATE areas SET next_number = ?, number_date = ? WHERE id = ?').run(nextNumber + 1, today, st.area_id);
 
     return db.prepare('SELECT * FROM tickets WHERE id = ?').get(result.lastInsertRowid) as Ticket;
   });
@@ -37,6 +47,8 @@ export function callNext(counterId: number, userId: number, serviceTypeId?: numb
   const txn = db.transaction(() => {
     const counter = db.prepare('SELECT * FROM counters WHERE id = ? AND is_active = 1').get(counterId) as Counter | undefined;
     if (!counter) throw new Error('Quầy không tồn tại hoặc đã tắt');
+    const activeArea = db.prepare('SELECT id FROM areas WHERE id = ? AND is_active = 1').get(counter.area_id);
+    if (!activeArea) throw new Error('Khu vực đã tắt');
 
     // Complete any currently serving ticket at this counter
     db.prepare(
@@ -79,7 +91,9 @@ export function recall(ticketId: number, counterId: number): { ticket: Ticket; c
   const ticket = db.prepare('SELECT * FROM tickets WHERE id = ? AND status = ?').get(ticketId, 'serving') as Ticket | undefined;
   if (!ticket) throw new Error('Vé không tồn tại hoặc không đang phục vụ');
 
-  const counter = db.prepare('SELECT * FROM counters WHERE id = ?').get(counterId) as Counter;
+  const counter = db.prepare('SELECT * FROM counters WHERE id = ? AND is_active = 1').get(counterId) as Counter | undefined;
+  if (!counter) throw new Error('Quầy không tồn tại hoặc đã tắt');
+  if (counter.area_id !== ticket.area_id) throw new Error('Quầy không thuộc khu vực của vé này');
   const st = db.prepare('SELECT * FROM service_types WHERE id = ?').get(ticket.service_type_id) as ServiceType;
   const area = db.prepare('SELECT * FROM areas WHERE id = ?').get(ticket.area_id) as Area;
   return { ticket, counter, serviceTypeName: st?.name || '', announceTemplate: area.announce_template };

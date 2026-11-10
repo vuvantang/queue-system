@@ -4,49 +4,115 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Chọn khu vực - Queue</title>
+  <link rel="stylesheet" href="/fonts/fonts.css">
   <style>
+    :root {
+      --bg: #f0f5ed;
+      --ink: #1a2e1a;
+      --ink-muted: #4a6b4a;
+      --green: #1b8a2a;
+      --green-dark: #14531b;
+      --gold-light: #d4a017;
+      --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+      --dur-fast: 140ms;
+      --dur-base: 220ms;
+    }
     * { margin: 0; padding: 0; box-sizing: border-box; }
+    ::selection { background: rgba(27, 138, 42, 0.22); color: var(--green-dark); }
+    :focus-visible { outline: 3px solid var(--gold-light); outline-offset: 2px; }
     body {
-      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-      background: #f0f5ed;
-      color: #1a2e1a;
+      font-family: 'Be Vietnam Pro', 'Segoe UI', system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--ink);
       min-height: 100vh;
       display: flex;
       align-items: center;
       justify-content: center;
+      padding: 32px 16px;
+      -webkit-font-smoothing: antialiased;
     }
     .container {
       text-align: center;
       max-width: 600px;
-      width: 90%;
+      width: 100%;
     }
-    .logo { height: 64px; margin-bottom: 16px; border-radius: 10px; }
+    .logo { height: 72px; width: auto; margin-bottom: 20px; border-radius: 12px; }
     .logo.hidden { display: none; }
-    h1 { font-size: 32px; margin-bottom: 8px; letter-spacing: 2px; color: #14531b; }
-    .subtitle { color: #4a6b4a; font-size: 18px; margin-bottom: 40px; }
+    h1 {
+      font-size: 32px;
+      font-weight: 800;
+      line-height: 1.2;
+      margin-bottom: 10px;
+      letter-spacing: 0.04em;
+      color: var(--green-dark);
+      text-wrap: balance;
+    }
+    .subtitle { color: var(--ink-muted); font-size: 18px; font-weight: 500; margin-bottom: 40px; }
     .areas { display: flex; flex-direction: column; gap: 14px; }
     .area-btn {
-      display: block;
-      padding: 22px 30px;
+      position: relative;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 12px;
+      min-height: 72px;
+      padding: 20px 56px;
       background: linear-gradient(135deg, #1b6d24, #22882e);
       color: #fff;
       text-decoration: none;
       border-radius: 14px;
       font-size: 22px;
-      font-weight: 600;
-      transition: transform 0.15s, box-shadow 0.15s;
-      box-shadow: 0 4px 16px rgba(27, 138, 42, 0.2);
+      font-weight: 700;
+      line-height: 1.3;
+      box-shadow: 0 4px 14px -4px rgba(20, 83, 27, 0.35);
+      transition: transform var(--dur-base) var(--ease-out);
     }
-    .area-btn:hover {
-      transform: translateY(-2px);
-      box-shadow: 0 8px 24px rgba(27, 138, 42, 0.35);
+    /* Deeper hover shadow is painted once; only its opacity changes */
+    .area-btn::after {
+      content: '';
+      position: absolute;
+      inset: 0;
+      border-radius: inherit;
+      box-shadow: 0 10px 26px -6px rgba(20, 83, 27, 0.45);
+      opacity: 0;
+      transition: opacity var(--dur-base) var(--ease-out);
+      pointer-events: none;
     }
-    .empty { color: #4a6b4a; font-size: 18px; margin-top: 20px; }
+    .area-btn:hover { transform: translateY(-2px); }
+    .area-btn:hover::after { opacity: 1; }
+    .area-btn:active { transform: translateY(0) scale(0.99); transition-duration: var(--dur-fast); }
+    .area-btn:active::after { opacity: 0; }
+    .area-btn .chevron {
+      position: absolute;
+      right: 22px;
+      width: 24px; height: 24px;
+      fill: none;
+      stroke: currentColor;
+      stroke-width: 2;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+      opacity: 0.75;
+      transition: transform var(--dur-base) var(--ease-out), opacity var(--dur-fast) var(--ease-out);
+    }
+    .area-btn:hover .chevron { transform: translateX(3px); opacity: 1; }
+    .empty { color: var(--ink-muted); font-size: 18px; margin-top: 20px; }
+    @media (max-width: 480px) {
+      body { padding: 24px 16px; }
+      h1 { font-size: 26px; letter-spacing: 0.02em; }
+      .subtitle { font-size: 16px; margin-bottom: 28px; }
+      .area-btn { font-size: 19px; min-height: 64px; padding: 16px 48px; }
+      .area-btn .chevron { right: 16px; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .area-btn:hover,
+      .area-btn:active { transform: none; }
+      .area-btn:hover .chevron { transform: none; }
+    }
   </style>
 </head>
 <body>
   <div class="container">
-    <img id="logo" class="logo hidden" src="" alt="">
+    <img id="logo" class="logo hidden" alt="">
     <h1 id="org-name">HỆ THỐNG XẾP HÀNG</h1>
     <p class="subtitle">Chọn khu vực hiển thị</p>
     <div id="areas" class="areas"></div>
@@ -85,6 +151,7 @@
           a.className = 'area-btn';
           a.href = '/tv/' + area.id;
           a.textContent = area.name;
+          a.insertAdjacentHTML('beforeend', '<svg class="chevron" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>');
           container.appendChild(a);
         });
       } catch(e) {

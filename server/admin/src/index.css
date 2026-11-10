@@ -1,1 +1,194 @@
 @import "tailwindcss";
+
+/* ── Tokens ─────────────────────────────────────────────── */
+:root {
+  --brand: #1b8a2a;
+  --brand-strong: #14531b;
+  --gold: #b8860b;
+  --gold-bright: #d4a017;
+  --page: #f0f5ed;
+
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --dur-fast: 140ms;
+  --dur-base: 220ms;
+}
+
+/* Tune Radix to the Bamso identity: brand green on solid steps, Be Vietnam Pro everywhere. */
+.radix-themes {
+  --default-font-family: 'Be Vietnam Pro', 'Segoe UI', system-ui, sans-serif;
+  --heading-font-family: 'Be Vietnam Pro', 'Segoe UI', system-ui, sans-serif;
+  --green-9: #1b8a2a;
+  --green-10: #177824;
+  --green-11: #14531b;
+  --color-background: var(--page);
+  --color-selection-root: rgba(27, 138, 42, 0.22);
+  -webkit-font-smoothing: antialiased;
+}
+
+body { background: var(--page); }
+
+/* ── Browser surfaces ──────────────────────────────────── */
+::selection { background: rgba(27, 138, 42, 0.22); color: var(--brand-strong); }
+
+:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+}
+/* Radix draws its own focus ring on fields; keep it, just in brand green. */
+.radix-themes { --focus-8: #1b8a2a; }
+
+.num, table td, .rt-Badge { font-variant-numeric: tabular-nums; }
+
+code {
+  font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+  font-size: 0.92em;
+}
+
+/* ── Layout ────────────────────────────────────────────── */
+.admin-header {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background: #fff;
+  border-bottom: 1px solid var(--gray-a5);
+}
+.admin-header__logo {
+  width: 32px;
+  height: 32px;
+  object-fit: contain;
+  flex-shrink: 0;
+}
+.admin-main {
+  width: 100%;
+  max-width: 1120px;
+  margin-inline: auto;
+  padding: 24px 32px 64px;
+}
+@media (max-width: 640px) {
+  .admin-main { padding: 16px 16px 48px; }
+}
+
+/* Tabs: scroll instead of squeezing on narrow screens */
+.admin-tabs .rt-TabsList {
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.admin-tabs .rt-TabsList::-webkit-scrollbar { display: none; }
+.admin-tabs .rt-TabsTrigger { flex-shrink: 0; }
+
+/* Section headings carry one consistent weight */
+.section-title { color: var(--gray-12); }
+
+/* ── Motion: state & feedback only ─────────────────────── */
+@keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
+@keyframes rise-in { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+@keyframes bar-grow { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+@keyframes check-draw { from { stroke-dashoffset: 1; } to { stroke-dashoffset: 0; } }
+
+/* Tab switch: quick crossfade of the incoming panel */
+.admin-tabs .rt-TabsContent[data-state='active'] {
+  animation: fade-in var(--dur-base) var(--ease-out);
+}
+
+/* Callouts / inline status arrive, never pop */
+.anim-enter { animation: rise-in var(--dur-base) var(--ease-out); }
+
+/* Save success: text + check draws in */
+.save-ok {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  animation: rise-in var(--dur-base) var(--ease-out);
+}
+.save-ok .check-path {
+  stroke-dasharray: 1;
+  animation: check-draw 260ms var(--ease-out) 60ms both;
+}
+
+/* Report bars */
+.bar-track {
+  position: relative;
+  height: 20px;
+  border-radius: 4px;
+  background: var(--gray-a2);
+}
+.bar-fill {
+  height: 100%;
+  border-radius: 4px;
+  transform-origin: left center;
+  transition: width var(--dur-base) var(--ease-out);
+  animation: bar-grow 520ms var(--ease-out) both;
+}
+.bar-label {
+  width: 200px;
+  flex-shrink: 0;
+  text-align: right;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+@media (max-width: 640px) {
+  .bar-label { width: 96px; }
+}
+
+/* Data tables scroll sideways on phones instead of breaking words */
+.table-nowrap th, .table-nowrap td { white-space: nowrap; }
+
+/* Stat tiles */
+.stat-value {
+  font-size: 28px;
+  line-height: 1.15;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  font-variant-numeric: tabular-nums;
+  color: var(--gray-12);
+}
+
+/* Native date input dressed as a Radix field */
+.date-field {
+  height: var(--space-6);
+  padding: 0 10px;
+  border-radius: var(--radius-2);
+  border: 1px solid var(--gray-a7);
+  background: var(--color-surface);
+  font: inherit;
+  font-size: var(--font-size-2);
+  color: var(--gray-12);
+  font-variant-numeric: tabular-nums;
+  transition: border-color var(--dur-fast) var(--ease-out);
+}
+.date-field:hover { border-color: var(--gray-a8); }
+.date-field:focus-visible { outline: 2px solid var(--brand); outline-offset: -1px; border-color: transparent; }
+
+/* Clickable status pill (button wearing a badge) */
+.pill-button {
+  cursor: pointer;
+  border: 0;
+  transition: filter var(--dur-fast) var(--ease-out);
+}
+.pill-button:hover { filter: brightness(0.95); }
+.pill-button:active { filter: brightness(0.9); }
+
+/* Ad rows */
+.ad-row { transition: opacity var(--dur-base) var(--ease-out), border-color var(--dur-base) var(--ease-out); }
+
+/* Login */
+.login-shell {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px 16px;
+  background: var(--page);
+}
+.login-card { width: 100%; max-width: 400px; }
+.login-logo { width: 56px; height: 56px; object-fit: contain; }
+
+/* ── Reduced motion: drop movement, keep fades & feedback ─ */
+@media (prefers-reduced-motion: reduce) {
+  .anim-enter,
+  .save-ok { animation: fade-in var(--dur-fast) linear; }
+  .save-ok .check-path { animation: none; stroke-dasharray: none; }
+  .admin-tabs .rt-TabsContent[data-state='active'] { animation: fade-in var(--dur-fast) linear; }
+  .bar-fill { animation: fade-in var(--dur-fast) linear; transition: none; }
+}

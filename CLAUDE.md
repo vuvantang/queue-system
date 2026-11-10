@@ -60,10 +60,13 @@ Each area ID maps to a room (`area:<id>`). Clients join their area's room on con
 - JWT tokens (24h expiry) via `Authorization: Bearer <token>` header
 - Roles: `admin` (full access) and `staff` (ticket operations only)
 - Public endpoints: `POST /api/tickets`, `GET /api/areas/*`, `GET /api/settings`
-- Default credentials: `admin` / `admin123`
+- No fixed default password: on first start (empty DB) the server creates `admin` with a random one-time password printed to the startup log; it must be changed at first login (`must_change_password`)
+- `JWT_SECRET` env (>= 32 random chars); if unset, a random secret is generated and persisted in `server/data/.jwt-secret`
+- `ALLOWED_ORIGINS` env: comma-separated extra CORS origins (defaults already cover the Tauri apps)
 
 ### Database
 SQLite via better-sqlite3 (synchronous, transactions for atomicity). Key tables: `users`, `areas`, `service_types`, `counters`, `tickets`, `settings`. Daily auto-reset: on first request of a new day, all waiting tickets are skipped and sequence numbers reset to 1.
+`server/data/*` (DB, `-wal`/`-shm`, `.jwt-secret`) and `server/public/uploads/*` (except `logo-default.jpg`) are runtime data and git-ignored — never commit them.
 
 ### Tauri v2 Specifics
 - Uses Tauri v2 capabilities system (not v1 allowlist)

@@ -177,6 +177,138 @@
       "description": "Permission identifier",
       "oneOf": [
         {
+          "description": "Enables the close_tv_window command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-close-tv-window",
+          "markdownDescription": "Enables the close_tv_window command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the get_machine_info command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-get-machine-info",
+          "markdownDescription": "Enables the get_machine_info command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the get_tts_cache_path command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-get-tts-cache-path",
+          "markdownDescription": "Enables the get_tts_cache_path command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the list_monitors command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-list-monitors",
+          "markdownDescription": "Enables the list_monitors command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the list_printers command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-list-printers",
+          "markdownDescription": "Enables the list_printers command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the open_log_dir command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-open-log-dir",
+          "markdownDescription": "Enables the open_log_dir command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the open_tv_window command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-open-tv-window",
+          "markdownDescription": "Enables the open_tv_window command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the play_ding command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-play-ding",
+          "markdownDescription": "Enables the play_ding command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the preload_tts command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-preload-tts",
+          "markdownDescription": "Enables the preload_tts command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the print_ticket command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-print-ticket",
+          "markdownDescription": "Enables the print_ticket command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the speak_vietnamese command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-speak-vietnamese",
+          "markdownDescription": "Enables the speak_vietnamese command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the close_tv_window command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-close-tv-window",
+          "markdownDescription": "Denies the close_tv_window command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the get_machine_info command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-get-machine-info",
+          "markdownDescription": "Denies the get_machine_info command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the get_tts_cache_path command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-get-tts-cache-path",
+          "markdownDescription": "Denies the get_tts_cache_path command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the list_monitors command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-list-monitors",
+          "markdownDescription": "Denies the list_monitors command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the list_printers command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-list-printers",
+          "markdownDescription": "Denies the list_printers command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the open_log_dir command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-open-log-dir",
+          "markdownDescription": "Denies the open_log_dir command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the open_tv_window command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-open-tv-window",
+          "markdownDescription": "Denies the open_tv_window command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the play_ding command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-play-ding",
+          "markdownDescription": "Denies the play_ding command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the preload_tts command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-preload-tts",
+          "markdownDescription": "Denies the preload_tts command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the print_ticket command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-print-ticket",
+          "markdownDescription": "Denies the print_ticket command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the speak_vietnamese command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-speak-vietnamese",
+          "markdownDescription": "Denies the speak_vietnamese command without any pre-configured scope."
+        },
+        {
           "description": "This permission set configures if your\napplication can enable or disable auto\nstarting the application on boot.\n\n#### Granted Permissions\n\nIt allows all to check, enable and\ndisable the automatic start on boot.\n\n\n#### This default permission set includes:\n\n- `allow-enable`\n- `allow-disable`\n- `allow-is-enabled`",
           "type": "string",
           "const": "autostart:default",

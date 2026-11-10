@@ -6,12 +6,15 @@ export interface User {
   role: 'admin' | 'staff';
   is_active: number;
   must_change_password: number;
+  token_version: number;
   created_at: string;
 }
 
 export interface Area {
   id: number;
   name: string;
+  next_number: number;
+  number_date: string | null;
   is_active: number;
   announce_template: string;
 }
@@ -70,4 +73,6 @@ export interface JwtPayload {
   userId: number;
   username: string;
   role: 'admin' | 'staff';
+  /** users.token_version at issue time; a mismatch means the token was revoked */
+  tv: number;
 }

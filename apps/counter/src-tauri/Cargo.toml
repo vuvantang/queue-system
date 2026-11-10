@@ -11,7 +11,7 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-tauri = { version = "2", features = ["devtools"] }
+tauri = { version = "2", features = [] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tauri-plugin-dialog = "2"
@@ -19,3 +19,8 @@ tauri-plugin-updater = "2"
 tauri-plugin-process = "2"
 tauri-plugin-log = "2"
 log = "0.4"
+
+[features]
+# DevTools are compiled in only for debug builds by default. Opt in for a
+# release build with `cargo build --features devtools` (never ship this).
+devtools = ["tauri/devtools"]

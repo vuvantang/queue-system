@@ -1,63 +1,69 @@
 import { io, Socket } from 'socket.io-client';
 
+// The kiosk only uses public endpoints. The operator login is a gate only:
+// the returned bearer token is never stored (not in memory, not on disk).
+try { localStorage.removeItem('kiosk_token'); } catch { /* ignore */ }
+
 let serverUrl = localStorage.getItem('kiosk_server_url') || 'http://localhost:3000';
-let authToken = localStorage.getItem('kiosk_token') || '';
 
 export function getServerUrl(): string { return serverUrl; }
 
-export function setServerUrl(url: string): void {
-  serverUrl = url.replace(/\/+$/, '');
+/** Returns a normalized http(s) base URL, or null if invalid. */
+export function normalizeServerUrl(url: string): string | null {
+  try {
+    const u = new URL(url.trim());
+    if (u.protocol !== 'http:' && u.protocol !== 'https:') return null;
+    if (u.username || u.password) return null;
+    return (u.origin + u.pathname).replace(/\/+$/, '');
+  } catch {
+    return null;
+  }
+}
+
+export function setServerUrl(url: string): boolean {
+  const normalized = normalizeServerUrl(url);
+  if (!normalized) return false;
+  serverUrl = normalized;
   localStorage.setItem('kiosk_server_url', serverUrl);
+  return true;
 }
 
-export function getToken(): string { return authToken; }
-
-export function setToken(t: string): void {
-  authToken = t;
-  localStorage.setItem('kiosk_token', t);
+export function hasSavedServerUrl(): boolean {
+  return !!localStorage.getItem('kiosk_server_url');
 }
 
-export function clearAuth(): void {
-  authToken = '';
-  localStorage.removeItem('kiosk_token');
+export class ApiError extends Error {
+  constructor(message: string, public status: number) {
+    super(message);
+  }
 }
 
-async function apiFetch(path: string, options?: RequestInit & { noAuth?: boolean }): Promise<any> {
+async function apiFetch(path: string, options?: RequestInit): Promise<any> {
   const method = options?.method || 'GET';
   console.debug('[API]', method, path);
 
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-  if (!options?.noAuth && authToken) {
-    headers['Authorization'] = `Bearer ${authToken}`;
-  }
-
-  const res = await fetch(`${serverUrl}/api${path}`, { headers, ...options });
+  const res = await fetch(`${serverUrl}/api${path}`, { ...options, headers });
   if (!res.ok) {
-    if (res.status === 401 && !options?.noAuth) {
-      console.warn('[API] 401 session expired:', path);
-      clearAuth();
-      throw new Error('SESSION_EXPIRED');
-    }
     console.warn('[API] Error', res.status, path);
-    const err = await res.json().catch(() => ({ error: 'Lỗi kết nối' }));
-    throw new Error(err.error || `HTTP ${res.status}`);
+    const err = await res.json().catch(() => ({} as { error?: string }));
+    let msg: string = typeof err?.error === 'string' && err.error ? err.error : '';
+    if (!msg) {
+      msg = res.status === 429
+        ? 'Quá nhiều yêu cầu, vui lòng thử lại sau ít phút'
+        : `Lỗi kết nối (HTTP ${res.status})`;
+    }
+    throw new ApiError(msg, res.status);
   }
   return res.json();
 }
 
-// Auth
-export async function login(username: string, password: string) {
-  const data = await apiFetch('/auth/login', {
+// Auth — verify operator credentials only; the token is discarded.
+export async function verifyOperator(username: string, password: string): Promise<void> {
+  await apiFetch('/auth/login', {
     method: 'POST',
     body: JSON.stringify({ username, password }),
-    noAuth: true,
-  } as any);
-  setToken(data.token);
-  return data.user;
-}
-
-export async function getMe() {
-  return apiFetch('/auth/me');
+  });
 }
 
 // Data

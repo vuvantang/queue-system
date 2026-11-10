@@ -1,28 +1,30 @@
 {
-  "$schema": "https://raw.githubusercontent.com/tauri-apps/tauri/dev/crates/tauri-utils/schema.json",
+  "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Default capability for the Kiosk app",
-  "windows": ["main", "tv-display"],
+  "description": "Kiosk main window only. The remote 'tv-display' window is intentionally not listed in any capability, so it has no IPC access.",
+  "windows": [
+    "main"
+  ],
   "permissions": [
     "core:default",
-    "core:window:default",
-    "core:window:allow-create",
-    "core:window:allow-set-fullscreen",
-    "core:window:allow-set-decorations",
-    "core:window:allow-set-always-on-top",
-    "core:window:allow-set-position",
-    "core:window:allow-set-size",
-    "core:window:allow-available-monitors",
-    "core:window:allow-primary-monitor",
-    "core:window:allow-current-monitor",
-    "core:webview:default",
-    "core:webview:allow-create-webview-window",
+    "core:window:allow-set-title",
     "autostart:default",
     "dialog:default",
     "dialog:allow-ask",
     "dialog:allow-confirm",
     "updater:default",
     "process:allow-restart",
-    "log:default"
+    "log:default",
+    "allow-list-monitors",
+    "allow-list-printers",
+    "allow-print-ticket",
+    "allow-open-tv-window",
+    "allow-close-tv-window",
+    "allow-play-ding",
+    "allow-speak-vietnamese",
+    "allow-preload-tts",
+    "allow-get-tts-cache-path",
+    "allow-get-machine-info",
+    "allow-open-log-dir"
   ]
 }

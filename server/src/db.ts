@@ -1,9 +1,12 @@
 import Database, { type Database as DatabaseType } from 'better-sqlite3';
 import bcrypt from 'bcryptjs';
 import crypto from 'node:crypto';
+import fs from 'node:fs';
 import path from 'path';
 
-const DB_PATH = path.join(__dirname, '..', 'data', 'bamso.db');
+export const DATA_DIR = path.join(__dirname, '..', 'data');
+fs.mkdirSync(DATA_DIR, { recursive: true });
+const DB_PATH = path.join(DATA_DIR, 'bamso.db');
 const db: DatabaseType = new Database(DB_PATH);
 
 // Enable WAL mode for better concurrent read performance
@@ -20,6 +23,7 @@ export function initDatabase(): { defaultPassword?: string } {
       role                  TEXT NOT NULL DEFAULT 'staff',
       is_active             INTEGER NOT NULL DEFAULT 1,
       must_change_password  INTEGER NOT NULL DEFAULT 0,
+      token_version         INTEGER NOT NULL DEFAULT 0,
       created_at            TEXT NOT NULL DEFAULT (datetime('now','localtime'))
     );
 
@@ -32,6 +36,7 @@ export function initDatabase(): { defaultPassword?: string } {
       id                INTEGER PRIMARY KEY AUTOINCREMENT,
       name              TEXT NOT NULL,
       next_number       INTEGER NOT NULL DEFAULT 1,
+      number_date       TEXT,
       is_active         INTEGER NOT NULL DEFAULT 1,
       announce_template TEXT NOT NULL DEFAULT 'Mời số {ticket}, đến {counter}'
     );
@@ -81,6 +86,10 @@ export function initDatabase(): { defaultPassword?: string } {
   if (!areaColumns.find(c => c.name === 'next_number')) {
     db.exec("ALTER TABLE areas ADD COLUMN next_number INTEGER NOT NULL DEFAULT 1");
   }
+  if (!areaColumns.find(c => c.name === 'number_date')) {
+    // Day the area's next_number counter belongs to; NULL/other day => restart from today's tickets
+    db.exec("ALTER TABLE areas ADD COLUMN number_date TEXT");
+  }
   if (!areaColumns.find(c => c.name === 'announce_template')) {
     db.exec("ALTER TABLE areas ADD COLUMN announce_template TEXT NOT NULL DEFAULT 'Mời số {ticket}, đến {counter}'");
   }
@@ -88,6 +97,10 @@ export function initDatabase(): { defaultPassword?: string } {
   const userColumns = db.prepare("PRAGMA table_info(users)").all() as { name: string }[];
   if (!userColumns.find(c => c.name === 'must_change_password')) {
     db.exec("ALTER TABLE users ADD COLUMN must_change_password INTEGER NOT NULL DEFAULT 0");
+  }
+  if (!userColumns.find(c => c.name === 'token_version')) {
+    // Bumped on password/role/active changes so previously issued JWTs stop working
+    db.exec("ALTER TABLE users ADD COLUMN token_version INTEGER NOT NULL DEFAULT 0");
   }
 
   // Seed default data if empty

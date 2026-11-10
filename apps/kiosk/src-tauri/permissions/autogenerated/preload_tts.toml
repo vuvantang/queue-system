@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-preload-tts"
+description = "Enables the preload_tts command without any pre-configured scope."
+commands.allow = ["preload_tts"]
+
+[[permission]]
+identifier = "deny-preload-tts"
+description = "Denies the preload_tts command without any pre-configured scope."
+commands.deny = ["preload_tts"]

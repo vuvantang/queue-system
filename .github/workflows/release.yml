@@ -5,36 +5,64 @@ on:
     tags:
       - 'v*'
 
-permissions:
-  contents: write
-  packages: write
+# Supply-chain hardening:
+# - Mọi `uses:` được pin theo full commit SHA (comment ghi version tương ứng).
+#   Khi nâng cấp action, resolve SHA mới bằng:
+#     git ls-remote https://github.com/<owner>/<repo> refs/tags/<tag> 'refs/tags/<tag>^{}'
+# - Workflow mặc định không có quyền gì; mỗi job chỉ xin đúng quyền cần thiết.
+#
+# TODO(owner): chuyển TAURI_SIGNING_PRIVATE_KEY và TAURI_SIGNING_PRIVATE_KEY_PASSWORD
+# từ repository secrets sang một GitHub Environment được bảo vệ (ví dụ "release"):
+#   Settings → Environments → New environment "release"
+#     - Required reviewers: bật, chọn người duyệt
+#     - Deployment branches and tags: chỉ cho phép tag `v*`
+#     - Thêm 2 secret trên vào environment, rồi xoá khỏi repository secrets
+# Sau đó thêm `environment: release` vào job build-kiosk và build-counter.
+# (Chưa thêm sẵn vì job sẽ lỗi cho đến khi environment được tạo.)
+# Nên bật thêm tag protection / ruleset cho `v*`.
+permissions: {}
 
 jobs:
   # ─── Build Docker image cho server ───
   build-server:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
 
       - name: Extract version
         id: tag
-        run: echo "version=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
+        shell: bash
+        run: |
+          VERSION="${GITHUB_REF#refs/tags/v}"
+          if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$ ]]; then
+            echo "::error::Invalid version tag: $GITHUB_REF"
+            exit 1
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
       - name: Update server version
+        shell: bash
+        env:
+          VERSION: ${{ steps.tag.outputs.version }}
         run: |
-          VERSION=${{ steps.tag.outputs.version }}
+          [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$ ]] || { echo "::error::Invalid version"; exit 1; }
           cd server
           jq --arg v "$VERSION" '.version = $v' package.json > tmp.json && mv tmp.json package.json
 
       - name: Login to GitHub Container Registry
-        uses: docker/login-action@v4
+        uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build and push Docker image
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
         with:
           context: server
           file: server/Dockerfile
@@ -46,18 +74,31 @@ jobs:
   # ─── Build Kiosk Windows NSIS ───
   build-kiosk:
     runs-on: windows-latest
+    permissions:
+      contents: read
+    # TODO(owner): environment: release   (xem ghi chú đầu file)
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
 
       - name: Extract version
         id: tag
         shell: bash
-        run: echo "version=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
+        run: |
+          VERSION="${GITHUB_REF#refs/tags/v}"
+          if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$ ]]; then
+            echo "::error::Invalid version tag: $GITHUB_REF"
+            exit 1
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
       - name: Update version from tag
         shell: bash
+        env:
+          VERSION: ${{ steps.tag.outputs.version }}
         run: |
-          VERSION=${{ steps.tag.outputs.version }}
+          [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$ ]] || { echo "::error::Invalid version"; exit 1; }
           # tauri.conf.json
           jq --arg v "$VERSION" '.version = $v' apps/kiosk/src-tauri/tauri.conf.json > tmp.json && mv tmp.json apps/kiosk/src-tauri/tauri.conf.json
           # Cargo.toml
@@ -66,37 +107,38 @@ jobs:
           jq --arg v "$VERSION" '.version = $v' apps/kiosk/package.json > tmp.json && mv tmp.json apps/kiosk/package.json
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
-          node-version: 20
+          node-version: 24
 
       - name: Setup Rust
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master (2026-10-16)
+        with:
+          toolchain: stable
 
       - name: Rust cache
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           workspaces: apps/kiosk/src-tauri
 
       - name: Install dependencies
         run: npm ci
 
-      - name: Check signing key
+      - name: Check signing secrets
         shell: bash
-        run: |
-          if [ -n "$TAURI_SIGNING_PRIVATE_KEY" ]; then
-            echo "TAURI_SIGNING_PRIVATE_KEY is set (${#TAURI_SIGNING_PRIVATE_KEY} chars)"
-            echo "First 30 chars: ${TAURI_SIGNING_PRIVATE_KEY:0:30}..."
-          else
-            echo "WARNING: TAURI_SIGNING_PRIVATE_KEY is NOT set!"
-          fi
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: |
+          status=0
+          if [ -n "$TAURI_SIGNING_PRIVATE_KEY" ]; then echo "TAURI_SIGNING_PRIVATE_KEY: set"; else echo "::error::TAURI_SIGNING_PRIVATE_KEY: missing"; status=1; fi
+          if [ -n "$TAURI_SIGNING_PRIVATE_KEY_PASSWORD" ]; then echo "TAURI_SIGNING_PRIVATE_KEY_PASSWORD: set"; else echo "::error::TAURI_SIGNING_PRIVATE_KEY_PASSWORD: missing"; status=1; fi
+          exit $status
 
       - name: Build Kiosk
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD || '' }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: |
           cd apps/kiosk
           npx tauri build --bundles nsis
@@ -106,7 +148,7 @@ jobs:
         run: find apps/kiosk/src-tauri/target/release/bundle/nsis/ -type f || true
 
       - name: Upload artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: kiosk-nsis
           path: apps/kiosk/src-tauri/target/release/bundle/nsis/
@@ -114,18 +156,31 @@ jobs:
   # ─── Build Counter Windows NSIS ───
   build-counter:
     runs-on: windows-latest
+    permissions:
+      contents: read
+    # TODO(owner): environment: release   (xem ghi chú đầu file)
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
 
       - name: Extract version
         id: tag
         shell: bash
-        run: echo "version=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
+        run: |
+          VERSION="${GITHUB_REF#refs/tags/v}"
+          if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$ ]]; then
+            echo "::error::Invalid version tag: $GITHUB_REF"
+            exit 1
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
       - name: Update version from tag
         shell: bash
+        env:
+          VERSION: ${{ steps.tag.outputs.version }}
         run: |
-          VERSION=${{ steps.tag.outputs.version }}
+          [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$ ]] || { echo "::error::Invalid version"; exit 1; }
           # tauri.conf.json
           jq --arg v "$VERSION" '.version = $v' apps/counter/src-tauri/tauri.conf.json > tmp.json && mv tmp.json apps/counter/src-tauri/tauri.conf.json
           # Cargo.toml
@@ -134,25 +189,38 @@ jobs:
           jq --arg v "$VERSION" '.version = $v' apps/counter/package.json > tmp.json && mv tmp.json apps/counter/package.json
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
-          node-version: 20
+          node-version: 24
 
       - name: Setup Rust
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master (2026-10-16)
+        with:
+          toolchain: stable
 
       - name: Rust cache
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           workspaces: apps/counter/src-tauri
 
       - name: Install dependencies
         run: npm ci
 
+      - name: Check signing secrets
+        shell: bash
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: |
+          status=0
+          if [ -n "$TAURI_SIGNING_PRIVATE_KEY" ]; then echo "TAURI_SIGNING_PRIVATE_KEY: set"; else echo "::error::TAURI_SIGNING_PRIVATE_KEY: missing"; status=1; fi
+          if [ -n "$TAURI_SIGNING_PRIVATE_KEY_PASSWORD" ]; then echo "TAURI_SIGNING_PRIVATE_KEY_PASSWORD: set"; else echo "::error::TAURI_SIGNING_PRIVATE_KEY_PASSWORD: missing"; status=1; fi
+          exit $status
+
       - name: Build Counter
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD || '' }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: |
           cd apps/counter
           npx tauri build --bundles nsis
@@ -162,7 +230,7 @@ jobs:
         run: find apps/counter/src-tauri/target/release/bundle/nsis/ -type f || true
 
       - name: Upload artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: counter-nsis
           path: apps/counter/src-tauri/target/release/bundle/nsis/
@@ -171,19 +239,28 @@ jobs:
   release:
     runs-on: ubuntu-latest
     needs: [build-kiosk, build-counter]
+    permissions:
+      contents: write
     steps:
       - name: Extract version
         id: tag
-        run: echo "version=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
+        shell: bash
+        run: |
+          VERSION="${GITHUB_REF#refs/tags/v}"
+          if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$ ]]; then
+            echo "::error::Invalid version tag: $GITHUB_REF"
+            exit 1
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
       - name: Download kiosk artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: kiosk-nsis
           path: kiosk-nsis
 
       - name: Download counter artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: counter-nsis
           path: counter-nsis
@@ -197,8 +274,12 @@ jobs:
 
       - name: Prepare release assets
         id: assets
+        shell: bash
+        env:
+          VERSION: ${{ steps.tag.outputs.version }}
         run: |
-          VERSION=${{ steps.tag.outputs.version }}
+          set -euo pipefail
+          [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$ ]] || { echo "::error::Invalid version"; exit 1; }
 
           # Tìm files - liệt kê tất cả trước
           echo "=== All files ==="
@@ -218,29 +299,31 @@ jobs:
           echo "COUNTER_ZIP=$COUNTER_ZIP"
           echo "COUNTER_SIG=$COUNTER_SIG"
 
-          # Đọc signatures
-          KIOSK_SIG_CONTENT=""
-          if [ -n "$KIOSK_SIG" ] && [ -f "$KIOSK_SIG" ]; then
-            KIOSK_SIG_CONTENT=$(cat "$KIOSK_SIG")
-            echo "Kiosk signature loaded (${#KIOSK_SIG_CONTENT} chars)"
-          else
-            echo "WARNING: Kiosk signature file not found!"
-          fi
+          # Không publish manifest thiếu file cập nhật hoặc chữ ký: dừng job.
+          missing=0
+          for v in KIOSK_ZIP KIOSK_SIG COUNTER_ZIP COUNTER_SIG; do
+            f="${!v}"
+            if [ -z "$f" ] || [ ! -s "$f" ]; then
+              echo "::error::$v not found or empty"
+              missing=1
+            fi
+          done
+          [ "$missing" -eq 0 ] || exit 1
 
-          COUNTER_SIG_CONTENT=""
-          if [ -n "$COUNTER_SIG" ] && [ -f "$COUNTER_SIG" ]; then
-            COUNTER_SIG_CONTENT=$(cat "$COUNTER_SIG")
-            echo "Counter signature loaded (${#COUNTER_SIG_CONTENT} chars)"
-          else
-            echo "WARNING: Counter signature file not found!"
-          fi
+          # Đọc signatures
+          KIOSK_SIG_CONTENT=$(cat "$KIOSK_SIG")
+          COUNTER_SIG_CONTENT=$(cat "$COUNTER_SIG")
+          echo "Kiosk signature loaded"
+          echo "Counter signature loaded"
 
           # Tạo update manifest cho Tauri updater
-          DOWNLOAD_BASE="https://github.com/${{ github.repository }}/releases/download/v${VERSION}"
+          DOWNLOAD_BASE="https://github.com/${GITHUB_REPOSITORY}/releases/download/v${VERSION}"
           PUB_DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 
           # Tên file cố định (không dấu cách)
+          KIOSK_EXE_RELEASE="Queue-Kiosk_${VERSION}_x64-setup.exe"
           KIOSK_ZIP_RELEASE="Queue-Kiosk_${VERSION}_x64-setup.nsis.zip"
+          COUNTER_EXE_RELEASE="Queue-Counter_${VERSION}_x64-setup.exe"
           COUNTER_ZIP_RELEASE="Queue-Counter_${VERSION}_x64-setup.nsis.zip"
 
           jq -n \
@@ -269,22 +352,17 @@ jobs:
           # Collect và rename files (bỏ dấu cách trong tên)
           mkdir -p release-assets
 
-          KIOSK_EXE_RELEASE="Queue-Kiosk_${VERSION}_x64-setup.exe"
-          KIOSK_ZIP_RELEASE="Queue-Kiosk_${VERSION}_x64-setup.nsis.zip"
-          COUNTER_EXE_RELEASE="Queue-Counter_${VERSION}_x64-setup.exe"
-          COUNTER_ZIP_RELEASE="Queue-Counter_${VERSION}_x64-setup.nsis.zip"
-
-          [ -n "$KIOSK_EXE" ] && cp "$KIOSK_EXE" "release-assets/${KIOSK_EXE_RELEASE}"
-          [ -n "$KIOSK_ZIP" ] && cp "$KIOSK_ZIP" "release-assets/${KIOSK_ZIP_RELEASE}"
-          [ -n "$COUNTER_EXE" ] && cp "$COUNTER_EXE" "release-assets/${COUNTER_EXE_RELEASE}"
-          [ -n "$COUNTER_ZIP" ] && cp "$COUNTER_ZIP" "release-assets/${COUNTER_ZIP_RELEASE}"
+          if [ -n "$KIOSK_EXE" ]; then cp "$KIOSK_EXE" "release-assets/${KIOSK_EXE_RELEASE}"; fi
+          cp "$KIOSK_ZIP" "release-assets/${KIOSK_ZIP_RELEASE}"
+          if [ -n "$COUNTER_EXE" ]; then cp "$COUNTER_EXE" "release-assets/${COUNTER_EXE_RELEASE}"; fi
+          cp "$COUNTER_ZIP" "release-assets/${COUNTER_ZIP_RELEASE}"
           cp kiosk-update.json counter-update.json release-assets/
 
           echo "=== release-assets ==="
           ls -la release-assets/
 
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2.6.2
         with:
           tag_name: v${{ steps.tag.outputs.version }}
           name: Release v${{ steps.tag.outputs.version }}

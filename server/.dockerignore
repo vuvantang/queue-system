@@ -1,6 +1,21 @@
 node_modules
 dist
-data/*.db
-data/*.db-journal
-.env
 *.md
+
+# Runtime data: never ship the dev database, WAL/SHM files or secrets
+data/
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+.jwt-secret
+.env
+.env*
+*.key
+*.pem
+
+# User uploads are runtime data; only the default logo ships in the image
+# (settings default to /uploads/logo-default.jpg on first start).
+public/uploads/*
+!public/uploads/.gitkeep
+!public/uploads/logo-default.jpg

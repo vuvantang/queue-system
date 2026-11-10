@@ -1,12 +1,17 @@
+import '@fontsource/be-vietnam-pro/400.css';
+import '@fontsource/be-vietnam-pro/500.css';
+import '@fontsource/be-vietnam-pro/600.css';
+import '@fontsource/be-vietnam-pro/700.css';
+import '@fontsource/be-vietnam-pro/800.css';
 import './style.css';
 import { initLogger, log } from './logger';
 import { checkForUpdates } from './updater';
 import {
   getServerUrl,
   setServerUrl,
-  clearAuth,
-  getToken,
-  login,
+  hasSavedServerUrl,
+  verifyOperator,
+  ApiError,
   getSettings,
   getAreas,
   getServiceTypes,
@@ -83,6 +88,52 @@ const settingsPasswordError = document.getElementById('settings-password-error')
 const settingsPasswordOk = document.getElementById('settings-password-ok')!;
 const settingsPasswordCancel = document.getElementById('settings-password-cancel')!;
 
+// ─── Motion hooks (chỉ điều khiển class để chạy hiệu ứng, không đổi logic) ───
+
+const OVERLAY_EXIT_MS = 160;
+const TICKET_EXIT_MS = 200;
+const overlayExitTimers = new WeakMap<HTMLElement, number>();
+
+function openOverlay(el: HTMLElement) {
+  const t = overlayExitTimers.get(el);
+  if (t) { clearTimeout(t); overlayExitTimers.delete(el); }
+  el.classList.remove('is-leaving');
+  el.classList.remove('hidden');
+}
+
+function closeOverlay(el: HTMLElement) {
+  if (el.classList.contains('hidden') || el.classList.contains('is-leaving')) return;
+  el.classList.add('is-leaving');
+  overlayExitTimers.set(el, window.setTimeout(() => {
+    overlayExitTimers.delete(el);
+    el.classList.add('hidden');
+    el.classList.remove('is-leaving');
+  }, OVERLAY_EXIT_MS));
+}
+
+let ticketDismissTimer: number | undefined;
+let ticketExitTimer: number | undefined;
+
+function showTicketResult() {
+  clearTimeout(ticketDismissTimer);
+  clearTimeout(ticketExitTimer);
+  // Khởi động lại hiệu ứng "vé in ra" kể cả khi overlay đang hiển thị/đang ẩn dần
+  ticketResult.classList.remove('is-leaving', 'is-showing');
+  ticketResult.classList.remove('hidden');
+  void ticketResult.offsetWidth;
+  ticketResult.classList.add('is-showing');
+}
+
+function hideTicketResult() {
+  clearTimeout(ticketDismissTimer);
+  if (ticketResult.classList.contains('hidden') || ticketResult.classList.contains('is-leaving')) return;
+  ticketResult.classList.add('is-leaving');
+  ticketExitTimer = window.setTimeout(() => {
+    ticketResult.classList.add('hidden');
+    ticketResult.classList.remove('is-leaving', 'is-showing');
+  }, TICKET_EXIT_MS);
+}
+
 // ─── Screens ───
 
 function showScreen(screen: 'login' | 'area' | 'kiosk') {
@@ -129,21 +180,19 @@ async function init() {
   // Kiểm tra cập nhật tự động (silent)
   checkForUpdates(true);
 
-  // Tự động khôi phục phiên nếu đã có token + area đã lưu
-  const savedAreaId = localStorage.getItem('kiosk_area_id');
-  if (getToken() && savedAreaId) {
+  // Tự động khôi phục phiên từ server URL + khu vực đã lưu (không cần token:
+  // kiosk chỉ dùng các API công khai)
+  const savedAreaId = Number(localStorage.getItem('kiosk_area_id'));
+  if (hasSavedServerUrl() && Number.isInteger(savedAreaId) && savedAreaId > 0) {
     try {
-      // Kiểm tra token còn hợp lệ bằng cách gọi API
+      // Kiểm tra server còn truy cập được
       await getSettings();
-      currentAreaId = Number(savedAreaId);
+      currentAreaId = savedAreaId;
       log.info('Session restored for area ' + savedAreaId);
       await startKiosk();
       return;
     } catch {
-      // Token hết hạn → về màn hình login
-      log.warn('Session expired, returning to login');
-      clearAuth();
-      localStorage.removeItem('kiosk_area_id');
+      log.warn('Server unreachable, returning to login');
     }
   }
 
@@ -159,6 +208,8 @@ loginPassword.addEventListener('keyup', (e) => { if (e.key === 'Enter') handleLo
 loginServerUrl.addEventListener('change', () => {
   setServerUrl(loginServerUrl.value);
 });
+
+const INVALID_SERVER_URL_MSG = 'Địa chỉ server không hợp lệ (cần http:// hoặc https://)';
 
 async function handleLogin() {
   if (loginBtn.classList.contains('loading')) return;
@@ -178,11 +229,17 @@ async function handleLogin() {
     return;
   }
 
-  setServerUrl(url);
+  if (!setServerUrl(url)) {
+    showError(INVALID_SERVER_URL_MSG);
+    loginBtn.classList.remove('loading');
+    loginBtn.removeAttribute('disabled');
+    loginBtn.textContent = 'Đăng nhập';
+    return;
+  }
 
   try {
     log.info('Login attempt: ' + username);
-    await login(username, password);
+    await verifyOperator(username, password);
     log.info('Login successful');
     localStorage.setItem('kiosk_username', username);
     loginPassword.value = '';
@@ -214,7 +271,7 @@ async function showAreaSelector() {
 
   try {
     const areas = await getAreas();
-    areaList.innerHTML = '';
+    areaList.replaceChildren();
 
     const active = areas.filter((a: any) => a.is_active);
     if (active.length === 0) {
@@ -242,7 +299,6 @@ async function selectArea(areaId: number) {
 }
 
 areaLogoutBtn.addEventListener('click', () => {
-  clearAuth();
   localStorage.removeItem('kiosk_area_id');
   currentAreaId = null;
   showScreen('login');
@@ -258,8 +314,9 @@ async function startKiosk() {
     const settings = await getSettings();
     orgName = settings.org_name || 'Queue';
     kioskOrgName.textContent = orgName;
-    if (settings.logo) {
-      kioskLogo.src = getServerUrl() + settings.logo;
+    const logoUrl = settings.logo ? sameOriginUrl(settings.logo) : null;
+    if (logoUrl) {
+      kioskLogo.src = logoUrl;
       kioskLogo.classList.remove('hidden');
     } else {
       kioskLogo.classList.add('hidden');
@@ -267,10 +324,18 @@ async function startKiosk() {
     // Render contact phones
     try {
       const phones: Array<{ label: string; phone: string }> = JSON.parse(settings.contact_phones || '[]');
-      if (phones.length > 0) {
-        kioskContact.innerHTML = phones
-          .map(p => `<span class="contact-item">${p.label ? `<strong>${p.label}:</strong> ` : ''}${p.phone}</span>`)
-          .join('');
+      if (Array.isArray(phones) && phones.length > 0) {
+        kioskContact.replaceChildren(...phones.map(p => {
+          const item = document.createElement('span');
+          item.className = 'contact-item';
+          if (p?.label) {
+            const label = document.createElement('strong');
+            label.textContent = `${p.label}:`;
+            item.append(label, ' ');
+          }
+          item.append(String(p?.phone ?? ''));
+          return item;
+        }));
         kioskContact.classList.remove('hidden');
       } else {
         kioskContact.classList.add('hidden');
@@ -313,21 +378,40 @@ async function startKiosk() {
   tryOpenTV();
 }
 
+// Resolve a server-relative path (e.g. "/uploads/logo.png") and keep it on the server origin
+function sameOriginUrl(path: string): string | null {
+  try {
+    const base = new URL(getServerUrl());
+    const u = new URL(path, base.origin + '/');
+    return u.origin === base.origin ? u.href : null;
+  } catch {
+    return null;
+  }
+}
+
 async function loadServiceButtons() {
   if (!currentAreaId) return;
   const types = await getServiceTypes(currentAreaId);
-  serviceButtons.innerHTML = '';
+  serviceButtons.replaceChildren();
 
   types.filter((t: any) => t.is_active).forEach((st: any) => {
     const btn = document.createElement('button');
     btn.className = 'service-btn';
-    btn.innerHTML = `
-      <div class="prefix">${st.prefix}</div>
-      <div class="name">${st.name}</div>
-    `;
-    btn.onclick = () => handleTakeNumber(st.id);
+    const prefix = document.createElement('div');
+    prefix.className = 'prefix';
+    prefix.textContent = String(st.prefix ?? '');
+    const name = document.createElement('div');
+    name.className = 'name';
+    name.textContent = String(st.name ?? '');
+    btn.append(prefix, name);
+    btn.onclick = () => {
+      if (btn.disabled) return;
+      btn.classList.add('is-chosen');
+      handleTakeNumber(st.id).finally(() => btn.classList.remove('is-chosen'));
+    };
     serviceButtons.appendChild(btn);
   });
+  serviceButtons.dataset.count = String(serviceButtons.children.length);
 }
 
 async function updateStats() {
@@ -343,7 +427,7 @@ async function updateStats() {
 openSettingsBtn.addEventListener('click', () => {
   settingsPasswordInput.value = '';
   settingsPasswordError.classList.add('hidden');
-  settingsPasswordOverlay.classList.remove('hidden');
+  openOverlay(settingsPasswordOverlay);
   settingsPasswordInput.focus();
 });
 
@@ -359,31 +443,36 @@ async function verifySettingsPassword() {
   }
 
   try {
-    // Re-login to verify password
+    // Re-verify operator password via server login (token is discarded)
     const username = localStorage.getItem('kiosk_username') || 'admin';
-    await login(username, password);
-    settingsPasswordOverlay.classList.add('hidden');
+    await verifyOperator(username, password);
+    settingsPasswordInput.value = '';
+    closeOverlay(settingsPasswordOverlay);
     openSettings();
-  } catch {
-    settingsPasswordError.textContent = 'Mật khẩu không đúng';
+  } catch (err) {
+    settingsPasswordError.textContent = err instanceof ApiError && err.status === 429
+      ? err.message
+      : err instanceof ApiError && err.status === 401
+        ? 'Mật khẩu không đúng'
+        : err instanceof ApiError ? err.message : 'Không thể kết nối server';
     settingsPasswordError.classList.remove('hidden');
   }
 }
 
 settingsPasswordCancel.addEventListener('click', () => {
-  settingsPasswordOverlay.classList.add('hidden');
+  closeOverlay(settingsPasswordOverlay);
 });
 
 async function loadPrinterList() {
-  settingsPrinter.innerHTML = '<option value="">Đang tải...</option>';
+  setPrinterPlaceholder('Đang tải...');
   try {
     const { invoke } = await import('@tauri-apps/api/core');
     const result = await invoke<{ printers: string[]; default_printer: string | null }>('list_printers');
     const savedPrinter = localStorage.getItem('kiosk_printer_name') || '';
 
-    settingsPrinter.innerHTML = '';
+    settingsPrinter.replaceChildren();
     if (result.printers.length === 0) {
-      settingsPrinter.innerHTML = '<option value="">Không tìm thấy máy in</option>';
+      setPrinterPlaceholder('Không tìm thấy máy in');
     } else {
       result.printers.forEach(name => {
         const opt = document.createElement('option');
@@ -394,12 +483,19 @@ async function loadPrinterList() {
       });
     }
   } catch {
-    settingsPrinter.innerHTML = '<option value="">Lỗi tải danh sách máy in</option>';
+    setPrinterPlaceholder('Lỗi tải danh sách máy in');
   }
 }
 
+function setPrinterPlaceholder(text: string) {
+  const opt = document.createElement('option');
+  opt.value = '';
+  opt.textContent = text;
+  settingsPrinter.replaceChildren(opt);
+}
+
 async function openSettings() {
-  settingsOverlay.classList.remove('hidden');
+  openOverlay(settingsOverlay);
 
   // Render announcement monitor
   renderAnnounceMonitor();
@@ -575,7 +671,7 @@ settingsSaveBtn.addEventListener('click', async () => {
     console.error('Autostart error:', err);
   }
 
-  settingsOverlay.classList.add('hidden');
+  closeOverlay(settingsOverlay);
 
   // Mở hoặc đóng TV khi thay đổi setting
   if (tvNowEnabled && !tvWasEnabled) {
@@ -586,7 +682,7 @@ settingsSaveBtn.addEventListener('click', async () => {
 });
 
 settingsCancelBtn.addEventListener('click', () => {
-  settingsOverlay.classList.add('hidden');
+  closeOverlay(settingsOverlay);
 });
 
 document.getElementById('settings-open-log')!.addEventListener('click', async () => {
@@ -599,7 +695,7 @@ document.getElementById('settings-open-log')!.addEventListener('click', async ()
 });
 
 settingsChangeAreaBtn.addEventListener('click', () => {
-  settingsOverlay.classList.add('hidden');
+  closeOverlay(settingsOverlay);
   localStorage.removeItem('kiosk_area_id');
   if (socket) socket.disconnect();
   showAreaSelector();
@@ -607,10 +703,9 @@ settingsChangeAreaBtn.addEventListener('click', () => {
 
 settingsLogoutBtn.addEventListener('click', () => {
   log.info('User logged out');
-  settingsOverlay.classList.add('hidden');
+  closeOverlay(settingsOverlay);
   localStorage.removeItem('kiosk_area_id');
   if (socket) socket.disconnect();
-  clearAuth();
   currentAreaId = null;
   showScreen('login');
 });
@@ -634,24 +729,22 @@ async function handleTakeNumber(serviceTypeId: number) {
 
     ticketResultNumber.textContent = ticket.ticket_number;
     resultWaitingCount.textContent = String(status.waiting_count);
-    ticketResult.classList.remove('hidden');
+    showTicketResult();
 
     if (localStorage.getItem('kiosk_auto_print') !== 'false') {
       log.info('Auto-printing ticket: ' + ticket.ticket_number);
       printTicketThermal(ticket.ticket_number, orgName, status.waiting_count);
     }
 
-    setTimeout(() => {
-      ticketResult.classList.add('hidden');
-    }, 5000);
+    ticketDismissTimer = window.setTimeout(hideTicketResult, 5000);
   } catch (err: any) {
     log.error('Ticket creation failed: ' + err.message);
-    if (err.message === 'SESSION_EXPIRED') {
-      showScreen('login');
-      return;
-    }
+    const isRateLimited = err instanceof ApiError && err.status === 429;
     import('@tauri-apps/plugin-dialog').then(({ message }) =>
-      message(err.message || 'Lỗi lấy số', { title: 'Lỗi', kind: 'error' })
+      message(err.message || 'Lỗi lấy số', {
+        title: isRateLimited ? 'Vui lòng chờ' : 'Lỗi',
+        kind: isRateLimited ? 'warning' : 'error',
+      })
     ).catch(() => {});
   } finally {
     isTakingNumber = false;
@@ -660,7 +753,7 @@ async function handleTakeNumber(serviceTypeId: number) {
 }
 
 ticketResult.addEventListener('click', () => {
-  ticketResult.classList.add('hidden');
+  hideTicketResult();
 });
 
 // ─── Announcement Queue (phát từ Rust, tuần tự) ───
@@ -694,7 +787,7 @@ function formatAnnounceLabel(item: AnnounceItem): string {
 
 function renderAnnounceMonitor() {
   const hasAnything = currentAnnounce || announceQueue.length > 0 || announceHistory.length > 0;
-  announceEmpty.classList.toggle('hidden', hasAnything);
+  announceEmpty.classList.toggle('hidden', !!hasAnything);
 
   // Current
   if (currentAnnounce) {
@@ -708,7 +801,7 @@ function renderAnnounceMonitor() {
   if (announceQueue.length > 0) {
     announcePendingSection.classList.remove('hidden');
     announcePendingCount.textContent = String(announceQueue.length);
-    announcePendingList.innerHTML = '';
+    announcePendingList.replaceChildren();
     announceQueue.forEach(item => {
       const li = document.createElement('li');
       li.textContent = formatAnnounceLabel(item);
@@ -721,7 +814,7 @@ function renderAnnounceMonitor() {
   // History
   if (announceHistory.length > 0) {
     announceHistorySection.classList.remove('hidden');
-    announceHistoryList.innerHTML = '';
+    announceHistoryList.replaceChildren();
     // Show newest first
     for (let i = announceHistory.length - 1; i >= 0; i--) {
       const item = announceHistory[i];
@@ -822,9 +915,9 @@ async function openTV(monitorIndex?: number) {
   if (tvOpened) return;
   try {
     const { invoke } = await import('@tauri-apps/api/core');
-    const url = `${getServerUrl()}/tv/${currentAreaId}`;
+    const url = `${getServerUrl()}/tv/${encodeURIComponent(String(currentAreaId))}`;
     log.info('Opening TV display: ' + url + ', monitor=' + (monitorIndex ?? 'default'));
-    await invoke('open_tv_window', { url, monitorIndex: monitorIndex ?? null });
+    await invoke('open_tv_window', { url, serverUrl: getServerUrl(), monitorIndex: monitorIndex ?? null });
     tvOpened = true;
     tvStatus.classList.remove('hidden');
     tvStatusText.textContent = monitorIndex != null
@@ -877,6 +970,16 @@ async function tryOpenTV(manual = false) {
   }
 }
 
+// Nhấn nhẹ số "Đang chờ" khi giá trị thay đổi
+let lastWaitingText = kioskWaiting.textContent;
+new MutationObserver(() => {
+  if (kioskWaiting.textContent === lastWaitingText) return;
+  lastWaitingText = kioskWaiting.textContent;
+  kioskWaiting.classList.remove('is-updated');
+  void kioskWaiting.offsetWidth;
+  kioskWaiting.classList.add('is-updated');
+}).observe(kioskWaiting, { childList: true, characterData: true, subtree: true });
+
 // ─── Clock ───
 
 function updateClock() {
@@ -887,23 +990,11 @@ function updateClock() {
   });
 }
 
-// F12: toggle DevTools
-document.addEventListener('keydown', async (e) => {
-  if (e.key === 'F12') {
-    e.preventDefault();
-    try {
-      const { getCurrentWebviewWindow } = await import('@tauri-apps/api/webviewWindow');
-      const win = getCurrentWebviewWindow();
-      // @ts-ignore - devtools method available with devtools feature
-      if (win.isDevToolsOpen && await win.isDevToolsOpen()) {
-        // @ts-ignore
-        win.closeDevTools();
-      } else {
-        // @ts-ignore
-        win.openDevTools();
-      }
-    } catch { /* ignore */ }
-  }
+// Tắt menu chuột phải mặc định của webview (trừ ô nhập liệu)
+document.addEventListener('contextmenu', (e) => {
+  const target = e.target as HTMLElement | null;
+  if (target?.closest('input, textarea, [contenteditable="true"]')) return;
+  e.preventDefault();
 });
 
 // Start

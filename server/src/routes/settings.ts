@@ -1,74 +1,99 @@
 import { Router } from 'express';
-import multer from 'multer';
-import path from 'node:path';
-import fs from 'node:fs';
 import db from '../db.js';
 import { authenticate, requireAdmin } from '../middleware/auth.js';
+import { imageUpload, saveImage, safeUnlinkUpload } from '../utils/uploads.js';
 import type { Setting } from '../types.js';
 
 const router = Router();
 
-// Multer config for logo upload
-const uploadDir = path.join(__dirname, '..', '..', 'public', 'uploads');
-const storage = multer.diskStorage({
-  destination: (_req, _file, cb) => cb(null, uploadDir),
-  filename: (_req, file, cb) => {
-    const ext = path.extname(file.originalname);
-    cb(null, `logo-${Date.now()}${ext}`);
+export const DEFAULT_LOGO = '/uploads/logo-default.jpg';
+const LOGO_RE = /^\/uploads\/logo-\d+\.(png|jpe?g|gif|webp)$/;
+
+function readSettings(): Record<string, string> {
+  const rows = db.prepare('SELECT * FROM settings').all() as Setting[];
+  const settings: Record<string, string> = {};
+  for (const row of rows) settings[row.key] = row.value;
+  return settings;
+}
+
+function isUploadedLogo(value: string | undefined): value is string {
+  return typeof value === 'string' && LOGO_RE.test(value);
+}
+
+/** Per-key validators for PUT /api/settings. Each returns the normalized string to store or throws. */
+const validators: Record<string, (v: unknown) => string> = {
+  org_name: (v) => {
+    if (typeof v !== 'string') throw new Error('Tên đơn vị không hợp lệ');
+    const s = v.trim();
+    if (s.length > 120) throw new Error('Tên đơn vị tối đa 120 ký tự');
+    return s;
   },
-});
-const upload = multer({
-  storage,
-  limits: { fileSize: 5 * 1024 * 1024 }, // 5MB
-  fileFilter: (_req, file, cb) => {
-    const allowed = ['.png', '.jpg', '.jpeg', '.gif', '.svg', '.webp'];
-    const ext = path.extname(file.originalname).toLowerCase();
-    if (allowed.includes(ext)) {
-      cb(null, true);
-    } else {
-      cb(new Error('Chỉ chấp nhận file ảnh (png, jpg, gif, svg, webp)'));
+  logo: (v) => {
+    if (typeof v !== 'string' || (v !== DEFAULT_LOGO && !LOGO_RE.test(v))) {
+      throw new Error('Đường dẫn logo không hợp lệ');
     }
+    return v;
   },
-});
+  contact_phones: (v) => {
+    let arr: unknown;
+    try { arr = typeof v === 'string' ? JSON.parse(v) : v; } catch { throw new Error('Danh sách số điện thoại không hợp lệ'); }
+    if (!Array.isArray(arr) || arr.length > 20) throw new Error('Danh sách số điện thoại không hợp lệ (tối đa 20 mục)');
+    const clean = arr.map((item) => {
+      if (!item || typeof item !== 'object' || Array.isArray(item)) throw new Error('Số điện thoại không hợp lệ');
+      const { label, phone } = item as { label?: unknown; phone?: unknown };
+      if (typeof label !== 'string' || typeof phone !== 'string') throw new Error('Số điện thoại không hợp lệ');
+      if (label.length > 60) throw new Error('Nhãn số điện thoại tối đa 60 ký tự');
+      if (phone.length > 30) throw new Error('Số điện thoại tối đa 30 ký tự');
+      return { label, phone };
+    });
+    return JSON.stringify(clean);
+  },
+  ad_slide_duration: (v) => {
+    const n = typeof v === 'number' ? v : typeof v === 'string' && /^\d+$/.test(v.trim()) ? Number(v.trim()) : NaN;
+    if (!Number.isInteger(n) || n < 1 || n > 120) throw new Error('Thời gian chuyển ảnh phải là số nguyên từ 1 đến 120 giây');
+    return String(n);
+  },
+};
 
 // Public: get settings (TV/Kiosk need org_name)
 router.get('/', (_req, res) => {
-  const rows = db.prepare('SELECT * FROM settings').all() as Setting[];
-  const settings: Record<string, string> = {};
-  for (const row of rows) {
-    settings[row.key] = row.value;
-  }
-  res.json(settings);
+  res.json(readSettings());
 });
 
 router.put('/', authenticate, requireAdmin, (req, res) => {
-  const entries = Object.entries(req.body) as [string, string][];
-  for (const [key, value] of entries) {
-    db.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)').run(key, String(value));
+  const body = req.body;
+  if (!body || typeof body !== 'object' || Array.isArray(body)) {
+    res.status(400).json({ error: 'Dữ liệu không hợp lệ' });
+    return;
   }
-  const rows = db.prepare('SELECT * FROM settings').all() as Setting[];
-  const settings: Record<string, string> = {};
-  for (const row of rows) {
-    settings[row.key] = row.value;
+  const updates: [string, string][] = [];
+  try {
+    for (const [key, value] of Object.entries(body)) {
+      const validate = Object.prototype.hasOwnProperty.call(validators, key) ? validators[key] : undefined;
+      if (!validate) throw new Error(`Không được phép cập nhật cấu hình "${key}"`);
+      updates.push([key, validate(value)]);
+    }
+  } catch (err: any) {
+    res.status(400).json({ error: err.message });
+    return;
   }
-  res.json(settings);
+  const stmt = db.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)');
+  db.transaction(() => { for (const [k, v] of updates) stmt.run(k, v); })();
+  res.json(readSettings());
 });
 
 // Upload logo
-router.post('/logo', authenticate, requireAdmin, upload.single('logo'), (req, res) => {
+router.post('/logo', authenticate, requireAdmin, imageUpload.single('logo'), (req, res) => {
   if (!req.file) {
     res.status(400).json({ error: 'Thiếu file logo' });
     return;
   }
+  const logoPath = saveImage(req.file, 'logo');
 
-  // Delete old logo if exists
+  // Delete old uploaded logo (never the bundled default, never anything outside uploads/)
   const old = db.prepare("SELECT value FROM settings WHERE key = 'logo'").get() as { value: string } | undefined;
-  if (old?.value) {
-    const oldPath = path.join(__dirname, '..', '..', 'public', old.value);
-    if (fs.existsSync(oldPath)) fs.unlinkSync(oldPath);
-  }
+  if (isUploadedLogo(old?.value)) safeUnlinkUpload(old!.value);
 
-  const logoPath = `/uploads/${req.file.filename}`;
   db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('logo', ?)").run(logoPath);
   res.json({ logo: logoPath });
 });
@@ -76,10 +101,7 @@ router.post('/logo', authenticate, requireAdmin, upload.single('logo'), (req, re
 // Delete logo
 router.delete('/logo', authenticate, requireAdmin, (_req, res) => {
   const old = db.prepare("SELECT value FROM settings WHERE key = 'logo'").get() as { value: string } | undefined;
-  if (old?.value) {
-    const oldPath = path.join(__dirname, '..', '..', 'public', old.value);
-    if (fs.existsSync(oldPath)) fs.unlinkSync(oldPath);
-  }
+  if (isUploadedLogo(old?.value)) safeUnlinkUpload(old!.value);
   db.prepare("DELETE FROM settings WHERE key = 'logo'").run();
   res.json({ message: 'Đã xóa logo' });
 });

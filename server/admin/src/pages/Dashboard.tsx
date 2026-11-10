@@ -1,9 +1,13 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import {
   Box, Flex, Heading, Text, TextField, Button, Card, Tabs,
-  Table, IconButton, Callout, Separator, Badge, Dialog, Select,
+  Table, IconButton, Separator, Badge, Select, Skeleton,
 } from '@radix-ui/themes';
 import * as api from '../api';
+import {
+  PencilIcon, CrossIcon, TrashIcon, ChevronUpIcon, ChevronDownIcon,
+  PlusIcon, CheckIcon, ResetIcon, ExitIcon, UploadIcon,
+} from '../icons';
 
 interface Props {
   onLogout: () => void;
@@ -37,26 +41,61 @@ interface User {
   is_active: number;
 }
 
-export default function Dashboard({ onLogout }: Props) {
+/** Inline save feedback: success draws a check, errors stay readable. */
+function SaveStatus({ msg }: { msg: string }) {
+  if (!msg) return null;
+  const ok = msg === 'Đã lưu';
   return (
-    <Box className="min-h-screen bg-[var(--color-background)]">
-      {/* Top bar */}
-      <Flex
-        align="center"
-        justify="between"
-        px="5"
-        py="3"
-        className="border-b border-[var(--gray-a5)]"
-      >
-        <Heading size="4" style={{ color: '#14531b' }}>Queue Admin</Heading>
-        <Button variant="soft" color="red" size="1" onClick={onLogout}>
-          Đăng xuất
-        </Button>
-      </Flex>
+    <Text
+      size="2"
+      color={ok ? 'green' : 'red'}
+      weight="medium"
+      role="status"
+      className={ok ? 'save-ok' : 'anim-enter'}
+    >
+      {ok && <CheckIcon />}
+      {msg}
+    </Text>
+  );
+}
 
-      <Box p="5" className="max-w-4xl mx-auto">
-        <Tabs.Root defaultValue="settings">
-          <Tabs.List>
+function SectionTitle({ children }: { children: React.ReactNode }) {
+  return <Heading as="h2" size="3" weight="bold" className="section-title">{children}</Heading>;
+}
+
+export default function Dashboard({ onLogout }: Props) {
+  const [brand, setBrand] = useState<{ name: string; logo: string }>({ name: '', logo: '' });
+
+  useEffect(() => {
+    api.getSettings()
+      .then(s => setBrand({ name: s.org_name || '', logo: s.logo || '' }))
+      .catch(() => {});
+  }, []);
+
+  return (
+    <Box className="min-h-screen">
+      {/* Top bar */}
+      <header className="admin-header">
+        <Flex align="center" justify="between" gap="3" px={{ initial: '4', sm: '6' }} py="3">
+          <Flex align="center" gap="3" style={{ minWidth: 0 }}>
+            {brand.logo && <img src={brand.logo} alt="" className="admin-header__logo" />}
+            <Box style={{ minWidth: 0 }}>
+              <Heading as="h1" size="4" style={{ color: 'var(--brand-strong)', lineHeight: 1.2 }}>Queue Admin</Heading>
+              {brand.name && (
+                <Text as="div" size="1" color="gray" truncate>{brand.name}</Text>
+              )}
+            </Box>
+          </Flex>
+          <Button variant="soft" color="gray" size="2" onClick={onLogout}>
+            <ExitIcon />
+            Đăng xuất
+          </Button>
+        </Flex>
+      </header>
+
+      <main className="admin-main">
+        <Tabs.Root defaultValue="settings" className="admin-tabs">
+          <Tabs.List size="2">
             <Tabs.Trigger value="settings">Cài đặt</Tabs.Trigger>
             <Tabs.Trigger value="areas">Khu vực</Tabs.Trigger>
             <Tabs.Trigger value="users">Tài khoản</Tabs.Trigger>
@@ -64,7 +103,7 @@ export default function Dashboard({ onLogout }: Props) {
             <Tabs.Trigger value="ads">Quảng cáo</Tabs.Trigger>
           </Tabs.List>
 
-          <Box pt="4">
+          <Box pt="5">
             <Tabs.Content value="settings">
               <SettingsTab />
             </Tabs.Content>
@@ -82,7 +121,7 @@ export default function Dashboard({ onLogout }: Props) {
             </Tabs.Content>
           </Box>
         </Tabs.Root>
-      </Box>
+      </main>
     </Box>
   );
 }
@@ -145,7 +184,7 @@ function SettingsTab() {
       {/* Org name */}
       <Card>
         <Flex direction="column" gap="3">
-          <Heading size="3">Tên tổ chức</Heading>
+          <SectionTitle>Tên tổ chức</SectionTitle>
           <Flex gap="2" align="end">
             <Box className="flex-1">
               <TextField.Root
@@ -156,25 +195,24 @@ function SettingsTab() {
             </Box>
             <Button onClick={saveOrgName} loading={saving}>Lưu</Button>
           </Flex>
-          {msg && (
-            <Text size="2" color={msg === 'Đã lưu' ? 'green' : 'red'}>{msg}</Text>
-          )}
+          <SaveStatus msg={msg} />
         </Flex>
       </Card>
 
       {/* Logo */}
       <Card>
         <Flex direction="column" gap="3">
-          <Heading size="3">Logo</Heading>
+          <SectionTitle>Logo</SectionTitle>
 
           {logo && (
             <Flex align="center" gap="4">
               <img
                 src={logo}
                 alt="Logo"
-                className="h-16 w-auto object-contain rounded-lg border border-[var(--gray-a5)] p-1"
+                className="h-16 w-auto object-contain rounded-lg border border-[var(--gray-a5)] p-1 bg-white"
               />
               <Button variant="soft" color="red" size="1" onClick={handleDeleteLogo}>
+                <TrashIcon />
                 Xóa logo
               </Button>
             </Flex>
@@ -184,11 +222,12 @@ function SettingsTab() {
             <input
               ref={fileRef}
               type="file"
-              accept="image/*"
+              accept="image/png,image/jpeg,image/gif,image/webp"
               onChange={handleUpload}
               className="hidden"
             />
             <Button variant="outline" onClick={() => fileRef.current?.click()}>
+              <UploadIcon />
               {logo ? 'Đổi logo' : 'Chọn logo'}
             </Button>
             <Text size="1" color="gray">PNG, JPG, SVG - tối đa 5MB</Text>
@@ -199,7 +238,11 @@ function SettingsTab() {
       {/* Contact phones */}
       <Card>
         <Flex direction="column" gap="3">
-          <Heading size="3">Số điện thoại liên hệ</Heading>
+          <SectionTitle>Số điện thoại liên hệ</SectionTitle>
+
+          {phones.length === 0 && (
+            <Text size="2" color="gray">Chưa có số điện thoại nào.</Text>
+          )}
 
           {phones.map((p, i) => (
             <Flex key={i} gap="2" align="end">
@@ -225,19 +268,31 @@ function SettingsTab() {
                   placeholder="Số điện thoại"
                 />
               </Box>
-              <Button variant="soft" color="red" size="1" onClick={() => {
-                setPhones(phones.filter((_, j) => j !== i));
-              }}>Xóa</Button>
+              <IconButton
+                variant="soft"
+                color="red"
+                size="2"
+                aria-label={`Xóa số ${p.label || p.phone || i + 1}`}
+                title="Xóa"
+                onClick={() => {
+                  setPhones(phones.filter((_, j) => j !== i));
+                }}
+              >
+                <CrossIcon />
+              </IconButton>
             </Flex>
           ))}
 
           <Flex gap="2">
-            <Button variant="outline" size="1" onClick={() => setPhones([...phones, { label: '', phone: '' }])}>
-              + Thêm số điện thoại
+            <Button variant="soft" size="2" onClick={() => setPhones([...phones, { label: '', phone: '' }])}>
+              <PlusIcon />
+              Thêm số điện thoại
             </Button>
           </Flex>
 
-          <Flex gap="2" align="center">
+          <Separator size="4" />
+
+          <Flex gap="3" align="center">
             <Button onClick={async () => {
               setSavingPhones(true);
               setPhoneMsg('');
@@ -251,9 +306,7 @@ function SettingsTab() {
                 setSavingPhones(false);
               }
             }} loading={savingPhones}>Lưu</Button>
-            {phoneMsg && (
-              <Text size="2" color={phoneMsg === 'Đã lưu' ? 'green' : 'red'}>{phoneMsg}</Text>
-            )}
+            <SaveStatus msg={phoneMsg} />
           </Flex>
         </Flex>
       </Card>
@@ -265,10 +318,15 @@ function SettingsTab() {
 function AreasTab() {
   const [areas, setAreas] = useState<Area[]>([]);
   const [newAreaName, setNewAreaName] = useState('');
+  const [loaded, setLoaded] = useState(false);
 
   const loadAreas = useCallback(async () => {
-    const data = await api.getAreas();
-    setAreas(data);
+    try {
+      const data = await api.getAreas();
+      setAreas(data);
+    } finally {
+      setLoaded(true);
+    }
   }, []);
 
   useEffect(() => { loadAreas(); }, [loadAreas]);
@@ -300,25 +358,33 @@ function AreasTab() {
       <Card>
         <Flex gap="2" align="end">
           <Box className="flex-1">
-            <Text size="2" color="gray" mb="1" className="block">Thêm khu vực</Text>
+            <Text as="label" htmlFor="new-area" size="2" weight="medium" mb="1" className="block">Thêm khu vực</Text>
             <TextField.Root
+              id="new-area"
               value={newAreaName}
               onChange={(e) => setNewAreaName(e.target.value)}
               placeholder="Tên khu vực"
               onKeyDown={(e) => e.key === 'Enter' && handleAddArea()}
             />
           </Box>
-          <Button onClick={handleAddArea}>Thêm</Button>
+          <Button onClick={handleAddArea}><PlusIcon />Thêm</Button>
         </Flex>
       </Card>
 
       {/* Area list */}
+      {!loaded && <Skeleton height="280px" style={{ borderRadius: 'var(--radius-4)' }} />}
+
       {areas.map(area => (
         <AreaCard key={area.id} area={area} onDelete={() => handleDeleteArea(area.id)} onRename={loadAreas} />
       ))}
 
-      {areas.length === 0 && (
-        <Text color="gray" size="2" className="text-center py-8">Chưa có khu vực nào</Text>
+      {loaded && areas.length === 0 && (
+        <Card>
+          <Flex direction="column" align="center" gap="1" py="6">
+            <Text size="2" weight="medium">Chưa có khu vực nào</Text>
+            <Text size="2" color="gray">Nhập tên ở ô phía trên để tạo khu vực đầu tiên.</Text>
+          </Flex>
+        </Card>
       )}
     </Flex>
   );
@@ -330,6 +396,7 @@ function AreaCard({ area, onDelete, onRename }: { area: Area; onDelete: () => vo
   const [name, setName] = useState(area.name);
   const [announceTemplate, setAnnounceTemplate] = useState(area.announce_template || 'Mời số {ticket}, đến {counter}');
   const [savingTemplate, setSavingTemplate] = useState(false);
+  const [templateMsg, setTemplateMsg] = useState('');
   const [serviceTypes, setServiceTypes] = useState<ServiceType[]>([]);
   const [counters, setCounters] = useState<Counter[]>([]);
   const [newStName, setNewStName] = useState('');
@@ -384,69 +451,82 @@ function AreaCard({ area, onDelete, onRename }: { area: Area; onDelete: () => vo
     <Card>
       <Flex direction="column" gap="3">
         {/* Area header */}
-        <Flex align="center" justify="between">
+        <Flex align="center" justify="between" gap="3" wrap="wrap">
           {editing ? (
-            <Flex gap="2" align="center" className="flex-1">
+            <Flex gap="2" align="center" className="flex-1" style={{ minWidth: 240 }}>
               <TextField.Root
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 onKeyDown={(e) => e.key === 'Enter' && saveName()}
                 className="flex-1"
+                aria-label="Tên khu vực"
+                autoFocus
               />
-              <Button size="1" onClick={saveName}>Lưu</Button>
-              <Button size="1" variant="soft" color="gray" onClick={() => { setName(area.name); setEditing(false); }}>Hủy</Button>
+              <Button size="2" onClick={saveName}>Lưu</Button>
+              <Button size="2" variant="soft" color="gray" onClick={() => { setName(area.name); setEditing(false); }}>Hủy</Button>
             </Flex>
           ) : (
-            <Flex align="center" gap="2">
-              <Heading size="3">{area.name}</Heading>
-              <Badge size="1" color="blue">ID: {area.id}</Badge>
-              <Text size="1" color="gray" className="cursor-pointer hover:underline" onClick={() => setEditing(true)}>
+            <Flex align="center" gap="2" wrap="wrap">
+              <Heading as="h2" size="4">{area.name}</Heading>
+              <Badge size="1" color="gray" variant="soft" className="num">ID {area.id}</Badge>
+              <Button size="1" variant="ghost" color="gray" onClick={() => setEditing(true)} style={{ marginLeft: 4 }}>
+                <PencilIcon width={13} height={13} />
                 Sửa tên
-              </Text>
+              </Button>
             </Flex>
           )}
-          <Button size="1" variant="soft" color="red" onClick={onDelete}>Xóa</Button>
+          <Flex gap="2" align="center">
+            <Button
+              size="1"
+              variant="soft"
+              color="orange"
+              onClick={async () => {
+                if (!confirm(`Reset hàng đợi khu vực "${area.name}"?`)) return;
+                try { await api.resetArea(area.id); alert('Đã reset khu vực'); } catch (e: any) { alert(e.message); }
+              }}
+            >
+              <ResetIcon width={13} height={13} />
+              Reset hàng đợi
+            </Button>
+            <Button size="1" variant="soft" color="red" onClick={onDelete}>
+              <TrashIcon width={13} height={13} />
+              Xóa
+            </Button>
+          </Flex>
         </Flex>
 
-        <Flex align="center" justify="between">
-          <Text size="1" color="gray">
-            TV Display: <code className="bg-[var(--gray-a3)] px-1 rounded">/tv/{area.id}</code>
-          </Text>
-          <Button
-            size="1"
-            variant="soft"
-            color="orange"
-            onClick={async () => {
-              if (!confirm(`Reset hàng đợi khu vực "${area.name}"?`)) return;
-              try { await api.resetArea(area.id); alert('Đã reset khu vực'); } catch (e: any) { alert(e.message); }
-            }}
-          >
-            Reset hàng đợi
-          </Button>
-        </Flex>
+        <Text size="1" color="gray">
+          TV Display: <code className="bg-[var(--gray-a3)] px-1.5 py-0.5 rounded text-[var(--gray-12)]">/tv/{area.id}</code>
+        </Text>
+
+        <Separator size="4" />
 
         {/* Announce template */}
         <Box>
-          <Text size="2" weight="bold" mb="1" className="block">Chuỗi phát âm khi gọi số</Text>
+          <Text as="label" htmlFor={`tpl-${area.id}`} size="2" weight="bold" mb="1" className="block">Chuỗi phát âm khi gọi số</Text>
           <Text size="1" color="gray" mb="2" className="block">
-            Biến: {'{ticket}'} = số thứ tự, {'{counter}'} = tên quầy, {'{service}'} = loại dịch vụ
+            Biến: <code>{'{ticket}'}</code> = số thứ tự, <code>{'{counter}'}</code> = tên quầy, <code>{'{service}'}</code> = loại dịch vụ
           </Text>
-          <Flex gap="2" align="end">
-            <Box className="flex-1">
+          <Flex gap="2" align="center" wrap="wrap">
+            <Box className="flex-1" style={{ minWidth: 220 }}>
               <TextField.Root
+                id={`tpl-${area.id}`}
                 value={announceTemplate}
                 onChange={(e) => setAnnounceTemplate(e.target.value)}
                 placeholder="Mời số {ticket}, đến {counter}"
-                size="1"
+                size="2"
               />
             </Box>
             <Button
-              size="1"
+              size="2"
               loading={savingTemplate}
               onClick={async () => {
                 setSavingTemplate(true);
+                setTemplateMsg('');
                 try {
                   await api.updateArea(area.id, { announce_template: announceTemplate });
+                  setTemplateMsg('Đã lưu');
+                  setTimeout(() => setTemplateMsg(''), 2000);
                 } catch (e: any) {
                   alert(e.message);
                 } finally {
@@ -456,6 +536,7 @@ function AreaCard({ area, onDelete, onRename }: { area: Area; onDelete: () => vo
             >
               Lưu
             </Button>
+            <SaveStatus msg={templateMsg} />
           </Flex>
         </Box>
 
@@ -464,31 +545,35 @@ function AreaCard({ area, onDelete, onRename }: { area: Area; onDelete: () => vo
         {/* Service Types */}
         <Box>
           <Text size="2" weight="bold" mb="2" className="block">Loại dịch vụ</Text>
-          <Flex gap="2" mb="2" align="end">
+          <Flex gap="2" mb="3" align="end">
             <TextField.Root
               value={newStName}
               onChange={(e) => setNewStName(e.target.value)}
               placeholder="Tên dịch vụ"
-              size="1"
+              aria-label="Tên dịch vụ"
+              size="2"
               className="flex-1"
+              onKeyDown={(e) => e.key === 'Enter' && addServiceType()}
             />
             <TextField.Root
               value={newStPrefix}
               onChange={(e) => setNewStPrefix(e.target.value)}
               placeholder="Prefix"
-              size="1"
-              style={{ width: 80 }}
+              aria-label="Prefix"
+              size="2"
+              style={{ width: 88 }}
+              onKeyDown={(e) => e.key === 'Enter' && addServiceType()}
             />
-            <Button size="1" onClick={addServiceType}>Thêm</Button>
+            <Button size="2" variant="soft" onClick={addServiceType}><PlusIcon />Thêm</Button>
           </Flex>
 
           {serviceTypes.length > 0 ? (
             <Table.Root size="1">
               <Table.Header>
                 <Table.Row>
-                  <Table.ColumnHeaderCell>Prefix</Table.ColumnHeaderCell>
+                  <Table.ColumnHeaderCell width="88px">Prefix</Table.ColumnHeaderCell>
                   <Table.ColumnHeaderCell>Tên</Table.ColumnHeaderCell>
-                  <Table.ColumnHeaderCell width="100px"></Table.ColumnHeaderCell>
+                  <Table.ColumnHeaderCell width="88px"><span className="sr-only">Thao tác</span></Table.ColumnHeaderCell>
                 </Table.Row>
               </Table.Header>
               <Table.Body>
@@ -498,7 +583,7 @@ function AreaCard({ area, onDelete, onRename }: { area: Area; onDelete: () => vo
               </Table.Body>
             </Table.Root>
           ) : (
-            <Text size="1" color="gray">Chưa có loại dịch vụ</Text>
+            <Text size="2" color="gray">Chưa có loại dịch vụ</Text>
           )}
         </Box>
 
@@ -507,39 +592,43 @@ function AreaCard({ area, onDelete, onRename }: { area: Area; onDelete: () => vo
         {/* Counters */}
         <Box>
           <Text size="2" weight="bold" mb="2" className="block">Quầy phục vụ</Text>
-          <Flex gap="2" mb="2" align="end">
+          <Flex gap="2" mb="3" align="end">
             <TextField.Root
               value={newCounterName}
               onChange={(e) => setNewCounterName(e.target.value)}
               placeholder="Tên quầy"
-              size="1"
+              aria-label="Tên quầy"
+              size="2"
               className="flex-1"
               onKeyDown={(e) => e.key === 'Enter' && addCounter()}
             />
-            <Button size="1" onClick={addCounter}>Thêm</Button>
+            <Button size="2" variant="soft" onClick={addCounter}><PlusIcon />Thêm</Button>
           </Flex>
 
           {counters.length > 0 ? (
             <Flex gap="2" wrap="wrap">
               {counters.map(c => (
-                <Badge key={c.id} size="2" variant="surface">
+                <Badge key={c.id} size="3" variant="surface" color="gray" highContrast>
                   {c.name}
                   <IconButton
                     size="1"
                     variant="ghost"
                     color="red"
                     className="ml-1"
+                    aria-label={`Xóa ${c.name}`}
+                    title="Xóa quầy"
                     onClick={async () => {
+                      if (!confirm(`Xóa quầy "${c.name}"?`)) return;
                       try { await api.deleteCounter(c.id); load(); } catch (e: any) { alert(e.message); }
                     }}
                   >
-                    ✕
+                    <CrossIcon width={12} height={12} />
                   </IconButton>
                 </Badge>
               ))}
             </Flex>
           ) : (
-            <Text size="1" color="gray">Chưa có quầy</Text>
+            <Text size="2" color="gray">Chưa có quầy</Text>
           )}
         </Box>
       </Flex>
@@ -567,10 +656,10 @@ function ServiceTypeRow({ st, onReload }: { st: ServiceType; onReload: () => voi
     return (
       <Table.Row>
         <Table.Cell>
-          <TextField.Root value={editPrefix} onChange={(e) => setEditPrefix(e.target.value)} size="1" style={{ width: 60 }} />
+          <TextField.Root value={editPrefix} onChange={(e) => setEditPrefix(e.target.value)} size="1" style={{ width: 60 }} aria-label="Prefix" />
         </Table.Cell>
         <Table.Cell>
-          <TextField.Root value={editName} onChange={(e) => setEditName(e.target.value)} size="1" onKeyDown={(e) => e.key === 'Enter' && save()} />
+          <TextField.Root value={editName} onChange={(e) => setEditName(e.target.value)} size="1" onKeyDown={(e) => e.key === 'Enter' && save()} aria-label="Tên dịch vụ" autoFocus />
         </Table.Cell>
         <Table.Cell>
           <Flex gap="1">
@@ -584,14 +673,19 @@ function ServiceTypeRow({ st, onReload }: { st: ServiceType; onReload: () => voi
 
   return (
     <Table.Row>
-      <Table.Cell><Badge>{st.prefix}</Badge></Table.Cell>
+      <Table.Cell><Badge size="2" variant="solid">{st.prefix}</Badge></Table.Cell>
       <Table.Cell>{st.name}</Table.Cell>
       <Table.Cell>
-        <Flex gap="1">
-          <IconButton size="1" variant="ghost" onClick={() => setEditing(true)}>✎</IconButton>
-          <IconButton size="1" variant="ghost" color="red" onClick={async () => {
+        <Flex gap="3" justify="end" pr="1">
+          <IconButton size="1" variant="ghost" color="gray" aria-label={`Sửa ${st.name}`} title="Sửa" onClick={() => setEditing(true)}>
+            <PencilIcon />
+          </IconButton>
+          <IconButton size="1" variant="ghost" color="red" aria-label={`Xóa ${st.name}`} title="Xóa" onClick={async () => {
+            if (!confirm(`Xóa loại dịch vụ "${st.name}"?`)) return;
             try { await api.deleteServiceType(st.id); onReload(); } catch (e: any) { alert(e.message); }
-          }}>✕</IconButton>
+          }}>
+            <TrashIcon />
+          </IconButton>
         </Flex>
       </Table.Cell>
     </Table.Row>
@@ -627,26 +721,39 @@ function formatDuration(seconds: number | null): string {
 function BarChart({ items, color }: { items: { label: string; value: number; sub?: string }[]; color: string }) {
   const max = Math.max(...items.map(i => i.value), 1);
   return (
-    <Flex direction="column" gap="2">
+    <Flex direction="column" gap="2" role="list">
       {items.map((item, i) => (
-        <Flex key={i} align="center" gap="3">
-          <Text size="1" style={{ width: 90, textAlign: 'right', flexShrink: 0 }}>{item.label}</Text>
-          <Box className="flex-1" style={{ position: 'relative', height: 24 }}>
+        <Flex key={i} align="center" gap="3" role="listitem">
+          <Text size="1" color="gray" className="bar-label num" title={item.label}>{item.label}</Text>
+          <Box className="flex-1 bar-track">
             <Box
+              className="bar-fill"
               style={{
                 width: `${Math.max((item.value / max) * 100, 1)}%`,
-                height: '100%',
                 background: color,
-                borderRadius: 4,
-                transition: 'width 0.3s',
+                animationDelay: `${Math.min(i, 8) * 30}ms`,
               }}
             />
           </Box>
-          <Text size="1" weight="bold" style={{ width: 40, flexShrink: 0 }}>{item.value}</Text>
-          {item.sub && <Text size="1" color="gray" style={{ width: 60, flexShrink: 0 }}>{item.sub}</Text>}
+          <Text size="2" weight="bold" className="num" style={{ width: 40, flexShrink: 0 }}>{item.value}</Text>
+          {item.sub && <Text size="1" color="gray" className="num" style={{ width: 60, flexShrink: 0 }}>{item.sub}</Text>}
         </Flex>
       ))}
     </Flex>
+  );
+}
+
+function StatTile({ label, value, tone }: { label: string; value: React.ReactNode; tone?: string }) {
+  return (
+    <Card className="flex-1" style={{ minWidth: 150 }}>
+      <Flex direction="column" gap="1">
+        <Flex align="center" gap="2">
+          {tone && <span aria-hidden style={{ width: 8, height: 8, borderRadius: 2, background: tone, flexShrink: 0 }} />}
+          <Text size="2" color="gray">{label}</Text>
+        </Flex>
+        <span className="stat-value">{value}</span>
+      </Flex>
+    </Card>
   );
 }
 
@@ -683,30 +790,34 @@ function ReportsTab() {
       <Card>
         <Flex gap="3" align="end" wrap="wrap">
           <Box>
-            <Text size="1" color="gray" className="block" mb="1">Từ ngày</Text>
+            <Text as="label" htmlFor="rp-from" size="2" weight="medium" className="block" mb="1">Từ ngày</Text>
             <input
+              id="rp-from"
               type="date"
               value={from}
+              max={to}
               onChange={(e) => setFrom(e.target.value)}
-              style={{ padding: '6px 10px', borderRadius: 6, border: '1px solid var(--gray-a5)', fontSize: 14 }}
+              className="date-field"
             />
           </Box>
           <Box>
-            <Text size="1" color="gray" className="block" mb="1">Đến ngày</Text>
+            <Text as="label" htmlFor="rp-to" size="2" weight="medium" className="block" mb="1">Đến ngày</Text>
             <input
+              id="rp-to"
               type="date"
               value={to}
+              min={from}
               onChange={(e) => setTo(e.target.value)}
-              style={{ padding: '6px 10px', borderRadius: 6, border: '1px solid var(--gray-a5)', fontSize: 14 }}
+              className="date-field"
             />
           </Box>
           <Box>
-            <Text size="1" color="gray" className="block" mb="1">Khu vực</Text>
+            <Text size="2" weight="medium" className="block" mb="1">Khu vực</Text>
             <Select.Root
               value={areaId != null ? String(areaId) : 'all'}
               onValueChange={(v) => setAreaId(v === 'all' ? undefined : Number(v))}
             >
-              <Select.Trigger />
+              <Select.Trigger aria-label="Khu vực" style={{ minWidth: 160 }} />
               <Select.Content>
                 <Select.Item value="all">Tất cả</Select.Item>
                 {areas.map(a => (
@@ -719,46 +830,30 @@ function ReportsTab() {
         </Flex>
       </Card>
 
+      {!data && loading && (
+        <Flex direction="column" gap="3" aria-busy="true">
+          <Flex gap="3" wrap="wrap">
+            {[0, 1, 2, 3, 4].map(i => <Skeleton key={i} height="84px" className="flex-1" style={{ minWidth: 150 }} />)}
+          </Flex>
+          <Skeleton height="160px" />
+        </Flex>
+      )}
+
       {data && (
         <>
-          {/* Summary Cards */}
+          {/* Summary */}
           <Flex gap="3" wrap="wrap">
-            <Card className="flex-1" style={{ minWidth: 140 }}>
-              <Flex direction="column" align="center" gap="1">
-                <Text size="1" color="gray">Tổng số</Text>
-                <Heading size="6" style={{ color: '#14531b' }}>{data.summary.total}</Heading>
-              </Flex>
-            </Card>
-            <Card className="flex-1" style={{ minWidth: 140 }}>
-              <Flex direction="column" align="center" gap="1">
-                <Text size="1" color="gray">Đã phục vụ</Text>
-                <Heading size="6" color="green">{data.summary.completed}</Heading>
-              </Flex>
-            </Card>
-            <Card className="flex-1" style={{ minWidth: 140 }}>
-              <Flex direction="column" align="center" gap="1">
-                <Text size="1" color="gray">Bỏ qua</Text>
-                <Heading size="6" color="orange">{data.summary.skipped}</Heading>
-              </Flex>
-            </Card>
-            <Card className="flex-1" style={{ minWidth: 140 }}>
-              <Flex direction="column" align="center" gap="1">
-                <Text size="1" color="gray">TB chờ</Text>
-                <Heading size="6" color="blue">{formatDuration(data.summary.avg_wait_seconds)}</Heading>
-              </Flex>
-            </Card>
-            <Card className="flex-1" style={{ minWidth: 140 }}>
-              <Flex direction="column" align="center" gap="1">
-                <Text size="1" color="gray">TB phục vụ</Text>
-                <Heading size="6" color="purple">{formatDuration(data.summary.avg_serve_seconds)}</Heading>
-              </Flex>
-            </Card>
+            <StatTile label="Tổng số" value={data.summary.total} tone="var(--brand-strong)" />
+            <StatTile label="Đã phục vụ" value={data.summary.completed} tone="var(--brand)" />
+            <StatTile label="Bỏ qua" value={data.summary.skipped} tone="var(--gold)" />
+            <StatTile label="TB chờ" value={formatDuration(data.summary.avg_wait_seconds)} />
+            <StatTile label="TB phục vụ" value={formatDuration(data.summary.avg_serve_seconds)} />
           </Flex>
 
           {/* Daily Chart */}
           {data.daily.length > 0 && (
             <Card>
-              <Heading size="3" mb="3">Theo ngày</Heading>
+              <Box mb="4"><SectionTitle>Theo ngày</SectionTitle></Box>
               <BarChart
                 items={data.daily.map(d => ({
                   label: d.date.slice(5), // MM-DD
@@ -773,7 +868,7 @@ function ReportsTab() {
           {/* By Service Type */}
           {data.byService.length > 0 && (
             <Card>
-              <Heading size="3" mb="3">Theo loại dịch vụ</Heading>
+              <Box mb="4"><SectionTitle>Theo loại dịch vụ</SectionTitle></Box>
               <BarChart
                 items={data.byService.map(s => ({
                   label: `${s.prefix} - ${s.name}`,
@@ -787,13 +882,13 @@ function ReportsTab() {
           {/* Hourly Distribution */}
           {data.hourly.length > 0 && (
             <Card>
-              <Heading size="3" mb="3">Theo giờ</Heading>
+              <Box mb="4"><SectionTitle>Theo giờ</SectionTitle></Box>
               <BarChart
                 items={data.hourly.map(h => ({
                   label: `${String(h.hour).padStart(2, '0')}:00`,
                   value: h.total,
                 }))}
-                color="#2563eb"
+                color="var(--brand-strong)"
               />
             </Card>
           )}
@@ -801,14 +896,14 @@ function ReportsTab() {
           {/* By Counter / Staff */}
           {data.byCounter.length > 0 && (
             <Card>
-              <Heading size="3" mb="3">Theo quầy / nhân viên</Heading>
-              <Table.Root size="2">
+              <Box mb="4"><SectionTitle>Theo quầy / nhân viên</SectionTitle></Box>
+              <Table.Root size="2" className="table-nowrap">
                 <Table.Header>
                   <Table.Row>
                     <Table.ColumnHeaderCell>Quầy</Table.ColumnHeaderCell>
                     <Table.ColumnHeaderCell>Nhân viên</Table.ColumnHeaderCell>
-                    <Table.ColumnHeaderCell>Đã phục vụ</Table.ColumnHeaderCell>
-                    <Table.ColumnHeaderCell>TB phục vụ</Table.ColumnHeaderCell>
+                    <Table.ColumnHeaderCell justify="end">Đã phục vụ</Table.ColumnHeaderCell>
+                    <Table.ColumnHeaderCell justify="end">TB phục vụ</Table.ColumnHeaderCell>
                   </Table.Row>
                 </Table.Header>
                 <Table.Body>
@@ -816,8 +911,8 @@ function ReportsTab() {
                     <Table.Row key={i}>
                       <Table.Cell><Text weight="medium">{c.counter_name}</Text></Table.Cell>
                       <Table.Cell>{c.staff_name || '—'}</Table.Cell>
-                      <Table.Cell><Badge color="green">{c.total}</Badge></Table.Cell>
-                      <Table.Cell>{formatDuration(c.avg_serve_seconds)}</Table.Cell>
+                      <Table.Cell justify="end"><Text weight="medium">{c.total}</Text></Table.Cell>
+                      <Table.Cell justify="end">{formatDuration(c.avg_serve_seconds)}</Table.Cell>
                     </Table.Row>
                   ))}
                 </Table.Body>
@@ -827,7 +922,9 @@ function ReportsTab() {
 
           {data.summary.total === 0 && (
             <Card>
-              <Text color="gray" size="2" className="text-center py-8">Không có dữ liệu trong khoảng thời gian này</Text>
+              <Flex justify="center" py="6">
+                <Text color="gray" size="2">Không có dữ liệu trong khoảng thời gian này</Text>
+              </Flex>
             </Card>
           )}
         </>
@@ -845,10 +942,15 @@ function UsersTab() {
   const [newRole, setNewRole] = useState<'staff' | 'admin'>('staff');
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editPassword, setEditPassword] = useState('');
+  const [loaded, setLoaded] = useState(false);
 
   const loadUsers = useCallback(async () => {
-    const data = await api.getUsers();
-    setUsers(data);
+    try {
+      const data = await api.getUsers();
+      setUsers(data);
+    } finally {
+      setLoaded(true);
+    }
   }, []);
 
   useEffect(() => { loadUsers(); }, [loadUsers]);
@@ -906,7 +1008,7 @@ function UsersTab() {
       await api.updateUser(id, { password: editPassword });
       setEditingId(null);
       setEditPassword('');
-      alert('Đã đặt lại mật khẩu');
+      alert('Đã đặt lại mật khẩu. Người dùng sẽ phải đổi mật khẩu ở lần đăng nhập tới.');
     } catch (err: any) {
       alert(err.message);
     }
@@ -917,53 +1019,68 @@ function UsersTab() {
       {/* Add user form */}
       <Card>
         <Flex direction="column" gap="3">
-          <Heading size="3">Thêm tài khoản</Heading>
+          <SectionTitle>Thêm tài khoản</SectionTitle>
           <Flex gap="2" wrap="wrap">
             <TextField.Root
               value={newUsername}
               onChange={(e) => setNewUsername(e.target.value)}
               placeholder="Tên đăng nhập"
+              aria-label="Tên đăng nhập"
               size="2"
-              style={{ minWidth: 140 }}
+              className="flex-1"
+              style={{ minWidth: 160 }}
             />
             <TextField.Root
               type="password"
               value={newPassword}
               onChange={(e) => setNewPassword(e.target.value)}
               placeholder="Mật khẩu"
+              aria-label="Mật khẩu"
               size="2"
-              style={{ minWidth: 140 }}
+              className="flex-1"
+              style={{ minWidth: 160 }}
             />
             <TextField.Root
               value={newDisplayName}
               onChange={(e) => setNewDisplayName(e.target.value)}
               placeholder="Tên hiển thị"
+              aria-label="Tên hiển thị"
               size="2"
-              style={{ minWidth: 140 }}
+              className="flex-1"
+              style={{ minWidth: 160 }}
             />
             <Select.Root value={newRole} onValueChange={(v) => setNewRole(v as 'staff' | 'admin')}>
-              <Select.Trigger />
+              <Select.Trigger aria-label="Vai trò" />
               <Select.Content>
                 <Select.Item value="staff">Nhân viên</Select.Item>
                 <Select.Item value="admin">Quản trị</Select.Item>
               </Select.Content>
             </Select.Root>
-            <Button onClick={handleAdd}>Thêm</Button>
+            <Button onClick={handleAdd}><PlusIcon />Thêm</Button>
           </Flex>
+          <Text size="1" color="gray">
+            Mật khẩu: {api.PASSWORD_POLICY_HINT} Người dùng sẽ phải đổi mật khẩu ở lần đăng nhập đầu tiên.
+          </Text>
         </Flex>
       </Card>
 
       {/* User list */}
       <Card>
-        {users.length > 0 ? (
-          <Table.Root size="2">
+        {!loaded ? (
+          <Flex direction="column" gap="3" p="2" aria-busy="true">
+            <Skeleton height="20px" width="40%" />
+            <Skeleton height="20px" />
+            <Skeleton height="20px" />
+          </Flex>
+        ) : users.length > 0 ? (
+          <Table.Root size="2" className="table-nowrap">
             <Table.Header>
               <Table.Row>
                 <Table.ColumnHeaderCell>Username</Table.ColumnHeaderCell>
                 <Table.ColumnHeaderCell>Tên hiển thị</Table.ColumnHeaderCell>
                 <Table.ColumnHeaderCell>Vai trò</Table.ColumnHeaderCell>
                 <Table.ColumnHeaderCell>Trạng thái</Table.ColumnHeaderCell>
-                <Table.ColumnHeaderCell></Table.ColumnHeaderCell>
+                <Table.ColumnHeaderCell><span className="sr-only">Thao tác</span></Table.ColumnHeaderCell>
               </Table.Row>
             </Table.Header>
             <Table.Body>
@@ -975,7 +1092,7 @@ function UsersTab() {
                   <Table.Cell>{user.display_name}</Table.Cell>
                   <Table.Cell>
                     <Select.Root value={user.role} onValueChange={(v) => handleChangeRole(user, v)}>
-                      <Select.Trigger variant="ghost" />
+                      <Select.Trigger variant="ghost" aria-label={`Vai trò của ${user.username}`} />
                       <Select.Content>
                         <Select.Item value="staff">Nhân viên</Select.Item>
                         <Select.Item value="admin">Quản trị</Select.Item>
@@ -983,16 +1100,20 @@ function UsersTab() {
                     </Select.Root>
                   </Table.Cell>
                   <Table.Cell>
-                    <Badge
-                      color={user.is_active ? 'green' : 'red'}
-                      className="cursor-pointer"
-                      onClick={() => handleToggleActive(user)}
-                    >
-                      {user.is_active ? 'Hoạt động' : 'Khóa'}
+                    <Badge asChild size="2" color={user.is_active ? 'green' : 'red'}>
+                      <button
+                        type="button"
+                        className="pill-button"
+                        title={user.is_active ? 'Bấm để khóa' : 'Bấm để mở khóa'}
+                        aria-pressed={!!user.is_active}
+                        onClick={() => handleToggleActive(user)}
+                      >
+                        {user.is_active ? 'Hoạt động' : 'Khóa'}
+                      </button>
                     </Badge>
                   </Table.Cell>
                   <Table.Cell>
-                    <Flex gap="1">
+                    <Flex gap="3" align="center" justify="end">
                       {editingId === user.id ? (
                         <Flex gap="1" align="center">
                           <TextField.Root
@@ -1003,6 +1124,8 @@ function UsersTab() {
                             size="1"
                             style={{ width: 130 }}
                             onKeyDown={(e) => e.key === 'Enter' && handleResetPassword(user.id)}
+                            aria-label="Mật khẩu mới"
+                            autoFocus
                           />
                           <Button size="1" onClick={() => handleResetPassword(user.id)}>OK</Button>
                           <Button size="1" variant="soft" color="gray" onClick={() => { setEditingId(null); setEditPassword(''); }}>Hủy</Button>
@@ -1012,8 +1135,8 @@ function UsersTab() {
                           Đặt MK
                         </Button>
                       )}
-                      <IconButton size="1" variant="ghost" color="red" onClick={() => handleDelete(user.id)}>
-                        ✕
+                      <IconButton size="1" variant="ghost" color="red" aria-label={`Xóa tài khoản ${user.username}`} title="Xóa" onClick={() => handleDelete(user.id)}>
+                        <TrashIcon />
                       </IconButton>
                     </Flex>
                   </Table.Cell>
@@ -1022,7 +1145,9 @@ function UsersTab() {
             </Table.Body>
           </Table.Root>
         ) : (
-          <Text color="gray" size="2" className="text-center py-4">Chưa có tài khoản nào</Text>
+          <Flex justify="center" py="5">
+            <Text color="gray" size="2">Chưa có tài khoản nào</Text>
+          </Flex>
         )}
       </Card>
     </Flex>
@@ -1135,7 +1260,7 @@ function AdsTab() {
       {/* Slide duration config */}
       <Card>
         <Flex direction="column" gap="3">
-          <Text weight="bold" size="3">Thời gian hiển thị mỗi slide</Text>
+          <SectionTitle>Thời gian hiển thị mỗi slide</SectionTitle>
           <Flex align="center" gap="3">
             <TextField.Root
               value={slideDuration}
@@ -1144,10 +1269,12 @@ function AdsTab() {
               min="1"
               style={{ width: 100 }}
               placeholder="5"
+              aria-label="Thời gian hiển thị mỗi slide (giây)"
+              className="num"
             />
             <Text size="2" color="gray">giây</Text>
-            <Button onClick={handleSaveDuration} disabled={saving}>Lưu</Button>
-            {msg && <Text size="2" color={msg === 'Đã lưu' ? 'green' : 'red'}>{msg}</Text>}
+            <Button onClick={handleSaveDuration} loading={saving}>Lưu</Button>
+            <SaveStatus msg={msg} />
           </Flex>
         </Flex>
       </Card>
@@ -1155,7 +1282,7 @@ function AdsTab() {
       {/* Upload */}
       <Card>
         <Flex direction="column" gap="3">
-          <Text weight="bold" size="3">Ảnh quảng cáo</Text>
+          <SectionTitle>Ảnh quảng cáo</SectionTitle>
           <Text size="2" color="gray">
             Ảnh sẽ hiển thị trên TV khi không còn khách chờ và phục vụ. PNG, JPG, SVG, WebP - tối đa 5MB.
           </Text>
@@ -1163,38 +1290,46 @@ function AdsTab() {
             <input
               ref={fileRef}
               type="file"
-              accept="image/*"
+              accept="image/png,image/jpeg,image/gif,image/webp"
               multiple
               onChange={handleUpload}
               className="hidden"
             />
-            <Button variant="outline" onClick={() => fileRef.current?.click()} disabled={uploading}>
-              {uploading ? 'Đang tải...' : '+ Thêm ảnh'}
+            <Button variant="outline" onClick={() => fileRef.current?.click()} disabled={uploading} loading={uploading}>
+              <UploadIcon />
+              {uploading ? 'Đang tải...' : 'Thêm ảnh'}
             </Button>
           </Flex>
         </Flex>
       </Card>
 
       {/* Ads list */}
+      {ads.length === 0 && (
+        <Card>
+          <Flex justify="center" py="5">
+            <Text color="gray" size="2">Chưa có ảnh quảng cáo nào</Text>
+          </Flex>
+        </Card>
+      )}
       {ads.length > 0 && (
         <Card>
           <Flex direction="column" gap="3">
-            <Text weight="bold" size="3">Danh sách ({ads.length} ảnh)</Text>
+            <SectionTitle>Danh sách ({ads.length} ảnh)</SectionTitle>
             {ads.map((ad, index) => (
               <Flex
                 key={ad.id}
                 align="center"
                 gap="3"
                 p="2"
-                className={`rounded-lg border ${ad.is_active ? 'border-[var(--gray-a5)]' : 'border-[var(--gray-a3)] opacity-50'}`}
+                className={`ad-row rounded-lg border ${ad.is_active ? 'border-[var(--gray-a5)]' : 'border-[var(--gray-a3)] opacity-60'}`}
               >
-                <Text size="2" color="gray" style={{ minWidth: 24, textAlign: 'center' }}>
+                <Text size="2" color="gray" className="num" style={{ minWidth: 24, textAlign: 'center' }}>
                   {index + 1}
                 </Text>
                 <img
                   src={ad.image_path}
                   alt={`Ad ${ad.id}`}
-                  className="rounded"
+                  className="rounded bg-[var(--gray-a3)]"
                   style={{ height: 60, width: 100, objectFit: 'cover' }}
                 />
                 <Flex direction="column" gap="1" style={{ flex: 1 }}>
@@ -1202,24 +1337,28 @@ function AdsTab() {
                     {ad.is_active ? 'Đang hiện' : 'Đã ẩn'}
                   </Badge>
                 </Flex>
-                <Flex gap="1">
+                <Flex gap="2" align="center" wrap="wrap" justify="end">
                   <IconButton
-                    variant="ghost"
+                    variant="soft"
+                    color="gray"
                     size="1"
                     disabled={index === 0}
                     onClick={() => handleMove(index, 'up')}
                     title="Di chuyển lên"
+                    aria-label="Di chuyển lên"
                   >
-                    ▲
+                    <ChevronUpIcon />
                   </IconButton>
                   <IconButton
-                    variant="ghost"
+                    variant="soft"
+                    color="gray"
                     size="1"
                     disabled={index === ads.length - 1}
                     onClick={() => handleMove(index, 'down')}
                     title="Di chuyển xuống"
+                    aria-label="Di chuyển xuống"
                   >
-                    ▼
+                    <ChevronDownIcon />
                   </IconButton>
                   <Button
                     variant="soft"
@@ -1230,6 +1369,7 @@ function AdsTab() {
                     {ad.is_active ? 'Ẩn' : 'Hiện'}
                   </Button>
                   <Button variant="soft" color="red" size="1" onClick={() => handleDelete(ad.id)}>
+                    <TrashIcon width={13} height={13} />
                     Xóa
                   </Button>
                 </Flex>

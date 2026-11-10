@@ -70,6 +70,17 @@ export function updateServiceType(id: number, data: { name?: string; prefix?: st
 
 export function deleteServiceType(id: number): void {
   const txn = db.transaction(() => {
+    const today = new Date().toLocaleDateString('en-CA');
+    const live = db.prepare(
+      `SELECT COUNT(*) as count FROM tickets
+       WHERE service_type_id = ? AND status IN ('waiting', 'serving') AND date(created_at) = ?`
+    ).get(id, today) as { count: number };
+    if (live.count > 0) {
+      throw new Error(
+        `Loại dịch vụ đang có ${live.count} vé chờ/đang phục vụ hôm nay, không thể xoá. ` +
+        'Hãy tắt loại dịch vụ này thay vì xoá, hoặc xoá sau khi đã xử lý hết vé.'
+      );
+    }
     db.prepare('DELETE FROM tickets WHERE service_type_id = ?').run(id);
     const result = db.prepare('DELETE FROM service_types WHERE id = ?').run(id);
     if (result.changes === 0) throw new Error('Loại dịch vụ không tồn tại');

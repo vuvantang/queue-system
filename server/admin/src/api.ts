@@ -14,6 +14,13 @@ export function clearToken() {
   localStorage.removeItem('admin_token');
 }
 
+export const PASSWORD_POLICY_HINT = 'Tối thiểu 8 ký tự, gồm chữ hoa, chữ thường, chữ số và ký tự đặc biệt (ví dụ: !@#$%).';
+
+/** Fired when the server says the current user must change their password first. */
+export const MUST_CHANGE_PASSWORD_EVENT = 'bamso:must-change-password';
+/** Fired when the session token is rejected (expired, revoked, user locked/deleted). */
+export const SESSION_EXPIRED_EVENT = 'bamso:session-expired';
+
 async function apiFetch(path: string, options?: RequestInit & { noAuth?: boolean }): Promise<any> {
   const headers: Record<string, string> = {};
   if (!options?.noAuth && token) {
@@ -25,30 +32,50 @@ async function apiFetch(path: string, options?: RequestInit & { noAuth?: boolean
   }
 
   const res = await fetch(`${API_BASE}${path}`, { ...options, headers: { ...headers, ...options?.headers } });
-  if (res.status === 401) {
+  if (res.status === 401 && !options?.noAuth) {
     clearToken();
+    window.dispatchEvent(new Event(SESSION_EXPIRED_EVENT));
     throw new Error('SESSION_EXPIRED');
   }
   if (!res.ok) {
     const err = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
-    throw new Error(err.error);
+    if (res.status === 403 && err?.error === 'MUST_CHANGE_PASSWORD') {
+      window.dispatchEvent(new Event(MUST_CHANGE_PASSWORD_EVENT));
+      throw new Error('Bạn cần đổi mật khẩu trước khi tiếp tục');
+    }
+    throw new Error(err.error || `HTTP ${res.status}`);
   }
   return res.json();
 }
 
+export interface LoginResult {
+  user: { id: number; username: string; display_name: string; role: 'admin' | 'staff'; must_change_password: number };
+  must_change_password: boolean;
+}
+
 // Auth
-export async function login(username: string, password: string) {
+export async function login(username: string, password: string): Promise<LoginResult> {
   const data = await apiFetch('/auth/login', {
     method: 'POST',
     body: JSON.stringify({ username, password }),
     noAuth: true,
   } as any);
   setToken(data.token);
-  return data.user;
+  return { user: data.user, must_change_password: !!data.must_change_password };
 }
 
-export async function getMe() {
+export async function getMe(): Promise<LoginResult['user']> {
   return apiFetch('/auth/me');
+}
+
+/** Change own password. The server revokes older tokens and returns a new one. */
+export async function changePassword(oldPassword: string, newPassword: string) {
+  const data = await apiFetch('/auth/change-password', {
+    method: 'PUT',
+    body: JSON.stringify({ old_password: oldPassword, new_password: newPassword }),
+  });
+  if (data?.token) setToken(data.token);
+  return data;
 }
 
 // Settings

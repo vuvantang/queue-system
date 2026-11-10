@@ -44,7 +44,7 @@ pub fn run() {
                     Target::new(TargetKind::Webview),
                 ])
                 .timezone_strategy(TimezoneStrategy::UseLocal)
-                .rotation_strategy(RotationStrategy::KeepAll)
+                .rotation_strategy(RotationStrategy::KeepSome(5))
                 .max_file_size(5_000_000)
                 .build(),
         )

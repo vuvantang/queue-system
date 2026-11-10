@@ -4,6 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=1920, height=1080">
   <title>Hệ thống xếp hàng - Queue</title>
+  <link rel="stylesheet" href="/fonts/fonts.css">
   <link rel="stylesheet" href="/style.css">
 </head>
 <body>
@@ -11,10 +12,10 @@
     <!-- Header -->
     <header id="header">
       <div id="header-left">
-        <img id="logo" src="" alt="" class="hidden">
+        <img id="logo" alt="" class="hidden">
         <h1 id="org-name">HỆ THỐNG XẾP HÀNG</h1>
       </div>
-      <div id="connection-status" class="connected">Đã kết nối</div>
+      <div id="connection-status" class="connected" role="status" aria-live="polite">Đã kết nối</div>
     </header>
 
     <!-- Main content -->
@@ -44,7 +45,7 @@
 
     <!-- Ad Slideshow overlay -->
     <div id="ad-slideshow" class="hidden">
-      <img id="ad-slide-img" src="" alt="">
+      <img id="ad-slide-img" alt="">
     </div>
 
     <!-- Announcement overlay -->

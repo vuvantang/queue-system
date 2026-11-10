@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-play-ding"
+description = "Enables the play_ding command without any pre-configured scope."
+commands.allow = ["play_ding"]
+
+[[permission]]
+identifier = "deny-play-ding"
+description = "Denies the play_ding command without any pre-configured scope."
+commands.deny = ["play_ding"]

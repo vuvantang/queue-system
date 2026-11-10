@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-get-tts-cache-path"
+description = "Enables the get_tts_cache_path command without any pre-configured scope."
+commands.allow = ["get_tts_cache_path"]
+
+[[permission]]
+identifier = "deny-get-tts-cache-path"
+description = "Denies the get_tts_cache_path command without any pre-configured scope."
+commands.deny = ["get_tts_cache_path"]

@@ -3,6 +3,9 @@
   "version": "1.0.0",
   "private": true,
   "description": "Hệ thống quản lý hàng đợi bấm số",
+  "engines": {
+    "node": ">=24.22.1"
+  },
   "workspaces": [
     "server",
     "apps/*"

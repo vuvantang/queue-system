@@ -14,16 +14,16 @@
         <h1>Queue</h1>
         <h2>Đăng nhập</h2>
         <div class="form-group">
-          <label>Địa chỉ Server:</label>
-          <input type="text" id="login-server-url" placeholder="http://192.168.1.100:3000">
+          <label for="login-server-url">Địa chỉ Server:</label>
+          <input type="text" id="login-server-url" autocomplete="url" spellcheck="false" placeholder="http://192.168.1.100:3000">
         </div>
         <div class="form-group">
-          <label>Tên đăng nhập:</label>
-          <input type="text" id="login-username" placeholder="admin">
+          <label for="login-username">Tên đăng nhập:</label>
+          <input type="text" id="login-username" autocomplete="username" spellcheck="false" placeholder="admin">
         </div>
         <div class="form-group">
-          <label>Mật khẩu:</label>
-          <input type="password" id="login-password" placeholder="••••••">
+          <label for="login-password">Mật khẩu:</label>
+          <input type="password" id="login-password" autocomplete="current-password" placeholder="••••••">
         </div>
         <div id="login-error" class="error-text hidden"></div>
         <button id="login-btn" class="btn-primary">Đăng nhập</button>
@@ -36,7 +36,7 @@
       <header id="topbar">
         <div class="topbar-row">
           <span id="user-display-name"></span>
-          <select id="area-select">
+          <select id="area-select" aria-label="Khu vực">
             <option value="">Chọn khu vực</option>
           </select>
           <div class="topbar-right">
@@ -56,19 +56,19 @@
       <!-- Tab 1: Single service (original) -->
       <div id="tab-single" class="tab-content">
         <div class="tab-selects">
-          <select id="counter-select">
+          <select id="counter-select" aria-label="Quầy">
             <option value="">Chọn quầy</option>
           </select>
-          <select id="service-type-select">
+          <select id="service-type-select" aria-label="Loại dịch vụ">
             <option value="">Tất cả dịch vụ</option>
           </select>
         </div>
 
         <!-- Current serving -->
-        <div id="current-serving">
+        <div id="current-serving" class="is-empty">
           <div>
             <div class="serving-label">ĐANG PHỤC VỤ</div>
-            <div id="current-ticket-number">---</div>
+            <div class="ticket-window"><div id="current-ticket-number" aria-live="polite">---</div></div>
           </div>
           <div class="serving-meta">
             <div id="current-service-type"></div>
@@ -79,19 +79,19 @@
         <!-- Action buttons -->
         <div id="actions">
           <button id="btn-call-next" class="action-btn call">
-            <span class="action-icon">&#9654;</span>
+            <span class="action-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M7 4.5v15l12-7.5z"/></svg></span>
             GỌI TIẾP
           </button>
           <button id="btn-recall" class="action-btn recall" disabled>
-            <span class="action-icon">&#128264;</span>
+            <span class="action-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M11 5 6 9H3v6h3l5 4z"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/><path d="M18.5 5.5a9 9 0 0 1 0 13"/></svg></span>
             GỌI LẠI
           </button>
           <button id="btn-complete" class="action-btn complete" disabled>
-            <span class="action-icon">&#10004;</span>
+            <span class="action-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg></span>
             HOÀN THÀNH
           </button>
           <button id="btn-skip" class="action-btn skip" disabled>
-            <span class="action-icon">&#10006;</span>
+            <span class="action-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></span>
             BỎ QUA
           </button>
         </div>
@@ -135,12 +135,13 @@
     <div id="password-modal" class="modal hidden">
       <div class="modal-content">
         <h3>Đổi mật khẩu</h3>
+        <p id="password-force-hint" class="modal-hint hidden">Bạn cần đổi mật khẩu trước khi sử dụng.</p>
         <div class="form-group">
-          <label>Mật khẩu cũ:</label>
+          <label for="old-password">Mật khẩu cũ:</label>
           <input type="password" id="old-password">
         </div>
         <div class="form-group">
-          <label>Mật khẩu mới:</label>
+          <label for="new-password">Mật khẩu mới:</label>
           <input type="password" id="new-password">
         </div>
         <div id="password-error" class="error-text hidden"></div>

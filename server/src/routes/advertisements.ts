@@ -1,35 +1,10 @@
 import { Router } from 'express';
-import multer from 'multer';
-import path from 'node:path';
-import fs from 'node:fs';
 import db from '../db.js';
 import { authenticate, requireAdmin } from '../middleware/auth.js';
+import { imageUpload, saveImage, safeUnlinkUpload } from '../utils/uploads.js';
 import type { Advertisement } from '../types.js';
 
 const router = Router();
-
-// Multer config for ad image upload
-const uploadDir = path.join(__dirname, '..', '..', 'public', 'uploads');
-const storage = multer.diskStorage({
-  destination: (_req, _file, cb) => cb(null, uploadDir),
-  filename: (_req, file, cb) => {
-    const ext = path.extname(file.originalname);
-    cb(null, `ad-${Date.now()}${ext}`);
-  },
-});
-const upload = multer({
-  storage,
-  limits: { fileSize: 5 * 1024 * 1024 }, // 5MB
-  fileFilter: (_req, file, cb) => {
-    const allowed = ['.png', '.jpg', '.jpeg', '.gif', '.svg', '.webp'];
-    const ext = path.extname(file.originalname).toLowerCase();
-    if (allowed.includes(ext)) {
-      cb(null, true);
-    } else {
-      cb(new Error('Chỉ chấp nhận file ảnh (png, jpg, gif, svg, webp)'));
-    }
-  },
-});
 
 // Public: get all active ads (for TV display)
 router.get('/', (_req, res) => {
@@ -49,14 +24,14 @@ router.get('/all', authenticate, requireAdmin, (_req, res) => {
 
 // Admin: reorder ads (MUST be before /:id)
 router.put('/reorder', authenticate, requireAdmin, (req, res) => {
-  const { order } = req.body as { order: number[] };
-  if (!Array.isArray(order)) {
+  const { order } = (req.body ?? {}) as { order: unknown };
+  if (!Array.isArray(order) || order.length > 1000 || !order.every(id => Number.isInteger(id))) {
     res.status(400).json({ error: 'Thiếu danh sách thứ tự' });
     return;
   }
   const stmt = db.prepare('UPDATE advertisements SET sort_order = ? WHERE id = ?');
   const transaction = db.transaction(() => {
-    order.forEach((id, index) => {
+    (order as number[]).forEach((id, index) => {
       stmt.run(index, id);
     });
   });
@@ -66,12 +41,12 @@ router.put('/reorder', authenticate, requireAdmin, (req, res) => {
 });
 
 // Admin: upload ad image
-router.post('/', authenticate, requireAdmin, upload.single('image'), (req, res) => {
+router.post('/', authenticate, requireAdmin, imageUpload.single('image'), (req, res) => {
   if (!req.file) {
     res.status(400).json({ error: 'Thiếu file ảnh' });
     return;
   }
-  const imagePath = `/uploads/${req.file.filename}`;
+  const imagePath = saveImage(req.file, 'ad');
   const maxOrder = db.prepare('SELECT MAX(sort_order) as max_order FROM advertisements').get() as { max_order: number | null };
   const sortOrder = (maxOrder?.max_order ?? -1) + 1;
 
@@ -86,7 +61,12 @@ router.post('/', authenticate, requireAdmin, upload.single('image'), (req, res) 
 // Admin: update ad (is_active, sort_order)
 router.put('/:id', authenticate, requireAdmin, (req, res) => {
   const { id } = req.params;
-  const { is_active, sort_order } = req.body as { is_active?: number; sort_order?: number };
+  const { is_active, sort_order } = (req.body ?? {}) as { is_active?: unknown; sort_order?: unknown };
+  if ((is_active !== undefined && is_active !== 0 && is_active !== 1) ||
+      (sort_order !== undefined && !Number.isInteger(sort_order))) {
+    res.status(400).json({ error: 'Dữ liệu không hợp lệ' });
+    return;
+  }
 
   const ad = db.prepare('SELECT * FROM advertisements WHERE id = ?').get(id) as Advertisement | undefined;
   if (!ad) {
@@ -115,8 +95,7 @@ router.delete('/:id', authenticate, requireAdmin, (req, res) => {
   }
 
   // Delete image file from disk
-  const filePath = path.join(__dirname, '..', '..', 'public', ad.image_path);
-  if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+  safeUnlinkUpload(ad.image_path);
 
   db.prepare('DELETE FROM advertisements WHERE id = ?').run(id);
   res.json({ message: 'Đã xóa quảng cáo' });

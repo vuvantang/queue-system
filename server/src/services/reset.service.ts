@@ -20,6 +20,7 @@ export function manualReset(): void {
   const today = new Date().toLocaleDateString('en-CA');
   const txn = db.transaction(() => {
     db.prepare("DELETE FROM tickets WHERE date(created_at) = ?").run(today);
+    db.prepare("UPDATE areas SET next_number = 1, number_date = NULL").run();
   });
   txn();
 }
@@ -28,6 +29,7 @@ export function resetArea(areaId: number): void {
   const today = new Date().toLocaleDateString('en-CA');
   const txn = db.transaction(() => {
     db.prepare("DELETE FROM tickets WHERE area_id = ? AND date(created_at) = ?").run(areaId, today);
+    db.prepare("UPDATE areas SET next_number = 1, number_date = NULL WHERE id = ?").run(areaId);
   });
   txn();
 }

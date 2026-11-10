@@ -2,14 +2,21 @@ import { Router } from 'express';
 import * as ticketService from '../services/ticket.service.js';
 import { manualReset, resetArea } from '../services/reset.service.js';
 import { authenticate, requireAdmin } from '../middleware/auth.js';
+import { ticketCreateLimiter } from '../middleware/rate-limit.js';
 import { broadcast } from '../socket.js';
 
 const router = Router();
 
+/** Accepts 5 or "5"; returns undefined for anything that is not a positive integer. */
+function toPosInt(v: unknown): number | undefined {
+  const n = typeof v === 'number' ? v : typeof v === 'string' && /^\d+$/.test(v) ? Number(v) : NaN;
+  return Number.isSafeInteger(n) && n > 0 ? n : undefined;
+}
+
 // Public: create ticket (kiosk)
-router.post('/', (req, res) => {
+router.post('/', ticketCreateLimiter, (req, res) => {
   try {
-    const { service_type_id } = req.body;
+    const service_type_id = toPosInt(req.body?.service_type_id);
     if (!service_type_id) {
       res.status(400).json({ error: 'Thiếu loại dịch vụ' });
       return;
@@ -25,7 +32,13 @@ router.post('/', (req, res) => {
 // Staff: call next
 router.post('/call-next', authenticate, (req, res) => {
   try {
-    const { counter_id, service_type_id } = req.body;
+    const counter_id = toPosInt(req.body?.counter_id);
+    const rawSt = req.body?.service_type_id;
+    const service_type_id = rawSt === undefined || rawSt === null || rawSt === '' ? undefined : toPosInt(rawSt);
+    if (rawSt !== undefined && rawSt !== null && rawSt !== '' && !service_type_id) {
+      res.status(400).json({ error: 'Loại dịch vụ không hợp lệ' });
+      return;
+    }
     if (!counter_id) {
       res.status(400).json({ error: 'Thiếu quầy' });
       return;
@@ -50,7 +63,7 @@ router.post('/call-next', authenticate, (req, res) => {
 // Staff: recall
 router.post('/:id/recall', authenticate, (req, res) => {
   try {
-    const { counter_id } = req.body;
+    const counter_id = toPosInt(req.body?.counter_id);
     if (!counter_id) {
       res.status(400).json({ error: 'Thiếu quầy' });
       return;

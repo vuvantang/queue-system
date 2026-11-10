@@ -112,6 +112,11 @@ services:
     restart: unless-stopped
     ports:
       - "3000:3000"
+    environment:
+      # Chuỗi ngẫu nhiên >= 32 ký tự, ví dụ: openssl rand -base64 48
+      JWT_SECRET: "<thay-bằng-chuỗi-ngẫu-nhiên>"
+      # (Tuỳ chọn) origin CORS bổ sung, phân tách bằng dấu phẩy
+      # ALLOWED_ORIGINS: "https://queue.example.com,http://192.168.1.10:8080"
     volumes:
       - bamso-data:/app/data
       - bamso-uploads:/app/public/uploads
@@ -134,6 +139,8 @@ docker compose down
 
 Truy cập: `http://<địa-chỉ-ip>:3000`
 
+> Container chạy dưới user không phải root (`node`, uid 1000). Nếu dùng bind mount thư mục host thay vì named volume, cần `chown -R 1000:1000` thư mục đó để server ghi được database và file upload.
+
 ### Cách 2: Chạy bằng Docker
 
 ```bash
@@ -145,6 +152,7 @@ docker run -d \
   --name bamso-server \
   --restart unless-stopped \
   -p 3000:3000 \
+  -e JWT_SECRET="$(openssl rand -base64 48)" \
   -v bamso-data:/app/data \
   -v bamso-uploads:/app/public/uploads \
   ghcr.io/vuvantang/queue-system/server:latest
@@ -166,11 +174,19 @@ npm install
 cd server
 npm run build
 
-# Chạy server
-npm start
+# Chạy server (JWT_SECRET: chuỗi ngẫu nhiên >= 32 ký tự)
+JWT_SECRET="$(openssl rand -base64 48)" npm start
 ```
 
 Server chạy tại: `http://localhost:3000`
+
+### Biến môi trường
+
+| Biến | Mô tả |
+|------|-------|
+| `JWT_SECRET` | Khoá ký JWT, chuỗi ngẫu nhiên **>= 32 ký tự**. Nên đặt cố định khi triển khai. Nếu không đặt, server tự sinh một secret ngẫu nhiên và lưu vào `data/.jwt-secret` (Docker: `/app/data/.jwt-secret`) để dùng lại ở các lần khởi động sau — cần giữ volume `data`. |
+| `ALLOWED_ORIGINS` | (Tuỳ chọn) Danh sách origin CORS bổ sung, phân tách bằng dấu phẩy. Mặc định đã cho phép các ứng dụng Tauri (Kiosk, Counter) và chính server. |
+| `PORT` | Cổng HTTP (mặc định `3000`). |
 
 ### Cài đặt Kiosk và Counter
 
@@ -193,8 +209,9 @@ Chọn khu vực cần hiển thị. Nhấn F11 để xem toàn màn hình.
 ### 1. Đăng nhập Admin
 
 - Truy cập: `http://<địa-chỉ-server>:3000/admin`
-- Tài khoản mặc định: `admin` / `CAxIL@2024!`
-- **Bắt buộc đổi mật khẩu lần đầu đăng nhập**
+- Không có mật khẩu mặc định cố định: ở **lần khởi động đầu tiên** (database trống), server tạo tài khoản `admin` với **mật khẩu ngẫu nhiên dùng một lần** và in ra log khởi động (`docker compose logs server` / `docker logs bamso-server`, hoặc terminal khi chạy `npm start`)
+- **Bắt buộc đổi mật khẩu ở lần đăng nhập đầu tiên**
+- Mật khẩu này chỉ được in một lần; nếu mất, xoá database trong volume `data` để khởi tạo lại (mất toàn bộ dữ liệu)
 
 ### 2. Cấu hình ban đầu (Admin)
 
@@ -321,6 +338,26 @@ bamso/
 ├── .github/workflows/          # CI/CD
 └── package.json                # Monorepo workspace
 ```
+
+## Ghi chú bảo mật
+
+- **Đổi mật khẩu bị lộ**: commit `704680b` đã vô tình commit file `server/data/bamso.db-wal` (và `bamso.db-shm`), chứa bcrypt hash mật khẩu của các tài khoản trên máy phát triển (`admin`, `nv1`, ...). Hãy đổi mật khẩu các tài khoản này trên mọi server đang dùng chúng, và không dùng lại các mật khẩu đó ở nơi khác. Các file này nay đã được đưa vào `.gitignore`.
+- **Xoá khỏi lịch sử git** (chủ repo thực hiện, cần force-push và mọi người phải clone lại):
+
+  ```bash
+  # Cài: pip install git-filter-repo  (hoặc brew install git-filter-repo)
+  git clone --mirror https://github.com/vuvantang/queue-system.git
+  cd queue-system.git
+  git filter-repo --invert-paths \
+    --path server/data/bamso.db-wal \
+    --path server/data/bamso.db-shm \
+    --path-glob 'server/public/uploads/logo-1775*.jpg'
+  git push --force --mirror
+  ```
+
+  Sau đó: yêu cầu GitHub Support xoá cache các commit cũ (nếu repo public), và xoá/clone lại mọi bản clone cũ. Việc xoá lịch sử không thay thế việc đổi mật khẩu.
+- **JWT_SECRET**: luôn dùng chuỗi ngẫu nhiên >= 32 ký tự; không commit vào repo hay bake vào image.
+- **Khoá ký cập nhật (Tauri updater)**: nên chuyển `TAURI_SIGNING_PRIVATE_KEY` / `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` sang một GitHub Environment có required reviewers và chỉ cho phép tag `v*` (xem ghi chú trong `.github/workflows/release.yml`).
 
 ## Công nghệ sử dụng
 

@@ -1,3 +1,8 @@
+import '@fontsource/be-vietnam-pro/400.css';
+import '@fontsource/be-vietnam-pro/500.css';
+import '@fontsource/be-vietnam-pro/600.css';
+import '@fontsource/be-vietnam-pro/700.css';
+import '@fontsource/be-vietnam-pro/800.css';
 import './style.css';
 import { initLogger, log } from './logger';
 import { checkForUpdates } from './updater';
@@ -22,6 +27,7 @@ interface UserInfo {
   username: string;
   display_name: string;
   role: 'admin' | 'staff';
+  must_change_password?: number | boolean;
 }
 
 interface TicketInfo {
@@ -94,6 +100,78 @@ const passwordModal = document.getElementById('password-modal')!;
 const oldPasswordInput = document.getElementById('old-password') as HTMLInputElement;
 const newPasswordInput = document.getElementById('new-password') as HTMLInputElement;
 const passwordError = document.getElementById('password-error')!;
+const passwordForceHint = document.getElementById('password-force-hint')!;
+const btnCancelPassword = document.getElementById('btn-cancel-password')!;
+
+// ─── Motion hooks (presentation only) ───
+const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
+const currentServingEl = document.getElementById('current-serving')!;
+const EASE_OUT = 'cubic-bezier(0.16, 1, 0.3, 1)';
+const EASE_IN = 'cubic-bezier(0.4, 0, 1, 1)';
+let shownTicketText = currentTicketNumber.textContent || '';
+
+// Number roll: old number exits up quickly, new one enters from below.
+// Interrupting (rapid calls) cancels the running roll instead of stacking.
+function animateTicketChange() {
+  const next = currentTicketNumber.textContent || '';
+  const prev = shownTicketText;
+  shownTicketText = next;
+  if (prev === next || typeof currentTicketNumber.animate !== 'function') return;
+  const win = currentTicketNumber.parentElement!;
+  win.querySelectorAll('.ticket-ghost').forEach(g => g.remove());
+  currentTicketNumber.getAnimations().forEach(a => a.cancel());
+
+  const isEmpty = !currentServingTicket;
+  if (reducedMotion.matches || isEmpty) {
+    currentTicketNumber.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 200, easing: EASE_OUT });
+    return;
+  }
+  const ghost = document.createElement('div');
+  ghost.className = 'ticket-ghost';
+  ghost.setAttribute('aria-hidden', 'true');
+  ghost.textContent = prev;
+  win.appendChild(ghost);
+  ghost.animate(
+    [{ transform: 'translateY(0)', opacity: 1 }, { transform: 'translateY(-75%)', opacity: 0 }],
+    { duration: 150, easing: EASE_IN, fill: 'forwards' },
+  ).finished.then(() => ghost.remove(), () => ghost.remove());
+  currentTicketNumber.animate(
+    [{ transform: 'translateY(85%)', opacity: 0 }, { transform: 'translateY(0)', opacity: 1 }],
+    { duration: 300, delay: 50, easing: EASE_OUT, fill: 'backwards' },
+  );
+}
+
+// Recall acknowledgment: non-spatial ring + colour flash.
+function pulseServing() {
+  currentServingEl.classList.remove('is-pulsing');
+  void currentServingEl.offsetWidth;
+  currentServingEl.classList.add('is-pulsing');
+  if (typeof currentTicketNumber.animate !== 'function') return;
+  currentTicketNumber.getAnimations().filter(a => a.id === 'pulse').forEach(a => a.cancel());
+  const anim = currentTicketNumber.animate(
+    [{ color: '#fde68a' }, { color: '#ffffff', offset: 0.3 }, { color: '#fde68a' }],
+    { duration: 620, easing: EASE_OUT },
+  );
+  anim.id = 'pulse';
+}
+currentServingEl.addEventListener('animationend', () => currentServingEl.classList.remove('is-pulsing'));
+
+// Waiting chips: only newly-arrived numbers animate in.
+function snapshotTexts(container: HTMLElement, selector: string) {
+  return new Set(Array.from(container.querySelectorAll(selector), el => el.textContent || ''));
+}
+function markNew(container: HTMLElement, selector: string, prev: Set<string>) {
+  const firstRender = container.dataset.rendered !== '1';
+  container.dataset.rendered = '1';
+  if (firstRender) return;
+  container.querySelectorAll(selector).forEach(el => {
+    if (!prev.has(el.textContent || '')) (el.closest('.multi-serving-card') || el).classList.add('is-new');
+  });
+}
+
+const ICON_RECALL = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M11 5 6 9H3v6h3l5 4z"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/><path d="M18.5 5.5a9 9 0 0 1 0 13"/></svg>';
+const ICON_CHECK = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>';
+const ICON_X = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>';
 
 // Init
 async function init() {
@@ -117,18 +195,49 @@ async function init() {
   loginServerUrl.value = api.getServerUrl();
 
   if (api.getToken()) {
+    let me: UserInfo | null = null;
+    let mustChange = false;
     try {
-      currentUser = await api.getMe();
-      log.info('Session restored for user: ' + currentUser?.username);
-      await showCounterScreen();
+      me = await api.getMe();
+      mustChange = !!me?.must_change_password;
+    } catch (err) {
+      if (isMustChangePassword(err)) {
+        mustChange = true;
+      } else {
+        log.warn('Session expired, returning to login');
+        api.clearAuth();
+      }
+    }
+    if (me || mustChange) {
+      currentUser = me;
+      log.info('Session restored for user: ' + (me?.username ?? '?'));
+      await enterApp(mustChange);
       return;
-    } catch {
-      log.warn('Session expired, returning to login');
-      api.clearAuth();
     }
   }
 
   showLoginScreen();
+}
+
+function isMustChangePassword(err: unknown): boolean {
+  return err instanceof api.ApiError && err.code === api.MUST_CHANGE_PASSWORD;
+}
+
+// Vào màn hình quầy; nếu tài khoản phải đổi mật khẩu thì bắt buộc đổi trước
+async function enterApp(mustChangePassword: boolean) {
+  if (mustChangePassword) {
+    const changed = await requirePasswordChange();
+    if (!changed) return;
+  }
+  if (!currentUser) {
+    try {
+      currentUser = await api.getMe();
+    } catch {
+      doLogout();
+      return;
+    }
+  }
+  await showCounterScreen();
 }
 
 // Login
@@ -159,15 +268,23 @@ async function handleLogin() {
     return;
   }
 
-  api.setServerUrl(serverUrl);
+  if (!api.setServerUrl(serverUrl)) {
+    showError(loginError, 'Địa chỉ server không hợp lệ (cần http:// hoặc https://)');
+    loginBtn.classList.remove('loading');
+    loginBtn.removeAttribute('disabled');
+    loginBtn.textContent = 'Đăng nhập';
+    return;
+  }
 
+  let mustChangePassword: boolean | null = null;
   try {
     log.info('Login attempt: ' + username);
-    currentUser = await api.login(username, password);
-    log.info('Login successful: ' + currentUser?.username);
+    const result = await api.login(username, password);
+    currentUser = result.user;
+    mustChangePassword = result.mustChangePassword;
+    log.info('Login successful: ' + currentUser?.username + (mustChangePassword ? ' (must change password)' : ''));
     loginPassword.value = '';
     hideError(loginError);
-    await showCounterScreen();
   } catch (err: any) {
     log.warn('Login failed: ' + err.message);
     showError(loginError, err.message);
@@ -176,6 +293,10 @@ async function handleLogin() {
   loginBtn.classList.remove('loading');
   loginBtn.removeAttribute('disabled');
   loginBtn.textContent = 'Đăng nhập';
+
+  if (mustChangePassword !== null) {
+    await enterApp(mustChangePassword);
+  }
 }
 
 // Counter Screen
@@ -183,7 +304,12 @@ async function showCounterScreen() {
   loginScreen.classList.add('hidden');
   counterScreen.classList.remove('hidden');
 
-  userDisplayName.textContent = currentUser?.display_name || '';
+  if (currentUser) {
+    const roleLabel = currentUser.role === 'admin' ? 'Quản trị' : 'Nhân viên';
+    userDisplayName.textContent = `${currentUser.display_name || currentUser.username} · ${roleLabel}`;
+  } else {
+    userDisplayName.textContent = '';
+  }
 
   await loadAreas();
 
@@ -414,6 +540,7 @@ function renderQueueStatus(data: any) {
   }
 
   queueWaitingCount.textContent = String(waitingFiltered.length);
+  const prevBadges = snapshotTexts(queueWaitingList, '.queue-badge');
   queueWaitingList.innerHTML = '';
   waitingFiltered.forEach((ticket: any) => {
     const badge = document.createElement('span');
@@ -424,6 +551,7 @@ function renderQueueStatus(data: any) {
     }
     queueWaitingList.appendChild(badge);
   });
+  markNew(queueWaitingList, '.queue-badge', prevBadges);
 
   statCompleted.textContent = String(data.completed_count);
   statWaiting.textContent = String(data.waiting_count);
@@ -446,6 +574,8 @@ function updateCurrentTicketDisplay() {
     btnComplete.setAttribute('disabled', '');
     btnSkip.setAttribute('disabled', '');
   }
+  currentServingEl.classList.toggle('is-empty', !currentServingTicket);
+  animateTicketChange();
 }
 
 // Helper: disable button + show loading during async action
@@ -492,6 +622,7 @@ btnRecall.addEventListener('click', () => withLoading(btnRecall, async () => {
   try {
     log.info('Recalling ticket: ' + currentServingTicket.ticket_number);
     await api.recallTicket(currentServingTicket.id, currentCounterId);
+    pulseServing();
   } catch (err: any) {
     log.error('recall failed: ' + err.message);
     showErrorDialog(err.message);
@@ -533,24 +664,65 @@ document.getElementById('btn-open-log')!.addEventListener('click', async () => {
 });
 
 // Logout
-document.getElementById('btn-logout')!.addEventListener('click', () => {
+function doLogout() {
   log.info('User logged out');
+  finishForcedPasswordChange(false);
+  passwordModal.classList.add('hidden');
   api.clearAuth();
   currentUser = null;
   currentServingTicket = null;
   if (socket) socket.disconnect();
+  socket = null;
   showLoginScreen();
-});
+}
+
+document.getElementById('btn-logout')!.addEventListener('click', doLogout);
 
 // Change password
-document.getElementById('btn-change-password')!.addEventListener('click', () => {
-  passwordModal.classList.remove('hidden');
+let forcedPasswordPromise: Promise<boolean> | null = null;
+let forcedPasswordResolve: ((changed: boolean) => void) | null = null;
+
+function openPasswordModal(forced: boolean) {
   oldPasswordInput.value = '';
   newPasswordInput.value = '';
   hideError(passwordError);
+  passwordForceHint.classList.toggle('hidden', !forced);
+  btnCancelPassword.textContent = forced ? 'Đăng xuất' : 'Hủy';
+  passwordModal.classList.remove('hidden');
+  oldPasswordInput.focus();
+}
+
+// Bắt buộc đổi mật khẩu (không thể đóng modal, chỉ có thể đăng xuất).
+// Trả về true khi đổi thành công, false khi người dùng đăng xuất.
+function requirePasswordChange(): Promise<boolean> {
+  if (forcedPasswordPromise) return forcedPasswordPromise;
+  log.warn('Password change required');
+  forcedPasswordPromise = new Promise<boolean>(resolve => { forcedPasswordResolve = resolve; });
+  openPasswordModal(true);
+  return forcedPasswordPromise;
+}
+
+function finishForcedPasswordChange(changed: boolean) {
+  const resolve = forcedPasswordResolve;
+  forcedPasswordResolve = null;
+  forcedPasswordPromise = null;
+  passwordForceHint.classList.add('hidden');
+  btnCancelPassword.textContent = 'Hủy';
+  resolve?.(changed);
+}
+
+// Server trả 403 MUST_CHANGE_PASSWORD ở bất kỳ API nào → bắt buộc đổi mật khẩu
+api.onMustChangePassword(() => { void requirePasswordChange(); });
+
+document.getElementById('btn-change-password')!.addEventListener('click', () => {
+  openPasswordModal(false);
 });
 
-document.getElementById('btn-cancel-password')!.addEventListener('click', () => {
+btnCancelPassword.addEventListener('click', () => {
+  if (forcedPasswordResolve) {
+    doLogout();
+    return;
+  }
   passwordModal.classList.add('hidden');
 });
 
@@ -561,13 +733,38 @@ document.getElementById('btn-save-password')!.addEventListener('click', async ()
     showError(passwordError, 'Vui lòng nhập đầy đủ');
     return;
   }
+  if (forcedPasswordResolve && oldPw === newPw) {
+    showError(passwordError, 'Mật khẩu mới phải khác mật khẩu cũ');
+    return;
+  }
   try {
     await api.changePassword(oldPw, newPw);
-    passwordModal.classList.add('hidden');
-    showInfoDialog('Đổi mật khẩu thành công');
   } catch (err: any) {
     showError(passwordError, err.message);
+    return;
   }
+  oldPasswordInput.value = '';
+  newPasswordInput.value = '';
+  passwordModal.classList.add('hidden');
+
+  if (forcedPasswordResolve) {
+    // Server có thể thu hồi token cũ sau khi đổi mật khẩu → đăng nhập lại bằng mật khẩu mới
+    try {
+      currentUser = await api.getMe();
+    } catch {
+      const username = currentUser?.username || loginUsername.value.trim();
+      try {
+        if (!username) throw new Error('no username');
+        currentUser = (await api.login(username, newPw)).user;
+      } catch {
+        doLogout();
+        showInfoDialog('Đổi mật khẩu thành công. Vui lòng đăng nhập lại.');
+        return;
+      }
+    }
+    finishForcedPasswordChange(true);
+  }
+  showInfoDialog('Đổi mật khẩu thành công');
 });
 
 // ─── Tabs ───
@@ -702,28 +899,37 @@ async function handleMultiCallNext(counterId: number, btn: HTMLButtonElement, se
 }
 
 function renderMultiServing() {
+  const prevServing = snapshotTexts(multiServingList, '.msc-ticket');
   multiServingList.innerHTML = '';
   if (multiServingTickets.length === 0) {
     multiServingList.innerHTML = '<div class="multi-serving-empty">Chưa có số đang phục vụ</div>';
+    markNew(multiServingList, '.msc-ticket', prevServing);
     return;
   }
   multiServingTickets.forEach(ticket => {
     const counterName = cachedCounters.find(c => c.id === ticket.counter_id)?.name || '';
     const card = document.createElement('div');
     card.className = 'multi-serving-card';
-    card.innerHTML = `
-      <div class="msc-ticket">${ticket.ticket_number}</div>
-      <div class="msc-info">
-        <div class="msc-service">${ticket.service_type_name || ''}</div>
-        <div class="msc-counter">${counterName}</div>
-      </div>
-      <div class="msc-actions">
-        <button class="msc-btn recall-btn" title="Gọi lại">&#128264;</button>
-        <button class="msc-btn complete-btn" title="Hoàn thành">&#10004;</button>
-        <button class="msc-btn skip-btn" title="Bỏ qua">&#10006;</button>
-      </div>
-    `;
-    const [recallBtn, completeBtn, skipBtn] = card.querySelectorAll('.msc-btn') as NodeListOf<HTMLButtonElement>;
+    const ticketEl = el('div', 'msc-ticket', ticket.ticket_number);
+    const info = el('div', 'msc-info');
+    info.append(
+      el('div', 'msc-service', ticket.service_type_name || ''),
+      el('div', 'msc-counter', counterName),
+    );
+    const actions = el('div', 'msc-actions');
+    // Icons are constant SVG markup (no server data)
+    const iconButton = (cls: string, label: string, icon: string) => {
+      const b = el('button', `msc-btn ${cls}`) as HTMLButtonElement;
+      b.title = label;
+      b.setAttribute('aria-label', label);
+      b.innerHTML = icon;
+      return b;
+    };
+    const recallBtn = iconButton('recall-btn', 'Gọi lại', ICON_RECALL);
+    const completeBtn = iconButton('complete-btn', 'Hoàn thành', ICON_CHECK);
+    const skipBtn = iconButton('skip-btn', 'Bỏ qua', ICON_X);
+    actions.append(recallBtn, completeBtn, skipBtn);
+    card.append(ticketEl, info, actions);
     recallBtn.addEventListener('click', async () => {
       const counterId = ticket.counter_id;
       if (!counterId) return;
@@ -743,11 +949,13 @@ function renderMultiServing() {
     });
     multiServingList.appendChild(card);
   });
+  markNew(multiServingList, '.msc-ticket', prevServing);
 }
 
 function renderMultiQueueStatus(data: any) {
   const waiting: any[] = data.waiting;
   multiWaitingCount.textContent = String(waiting.length);
+  const prevBadges = snapshotTexts(multiWaitingList, '.queue-badge');
   multiWaitingList.innerHTML = '';
   waiting.forEach((ticket: any) => {
     const badge = document.createElement('span');
@@ -756,6 +964,7 @@ function renderMultiQueueStatus(data: any) {
     if (ticket.service_type_name) badge.title = ticket.service_type_name;
     multiWaitingList.appendChild(badge);
   });
+  markNew(multiWaitingList, '.queue-badge', prevBadges);
 
   // Update per-counter waiting counts based on selected service
   const countMap = new Map<number, number>();
@@ -791,6 +1000,13 @@ async function refreshMultiFromServer() {
 }
 
 // Helpers
+function el(tag: string, className: string, text?: string): HTMLElement {
+  const node = document.createElement(tag);
+  node.className = className;
+  if (text !== undefined) node.textContent = String(text);
+  return node;
+}
+
 function showError(el: HTMLElement, msg: string) {
   el.textContent = msg;
   el.classList.remove('hidden');
@@ -800,23 +1016,11 @@ function hideError(el: HTMLElement) {
   el.classList.add('hidden');
 }
 
-// F12: toggle DevTools
-document.addEventListener('keydown', async (e) => {
-  if (e.key === 'F12') {
-    e.preventDefault();
-    try {
-      const { getCurrentWebviewWindow } = await import('@tauri-apps/api/webviewWindow');
-      const win = getCurrentWebviewWindow();
-      // @ts-ignore - devtools method available with devtools feature
-      if (win.isDevToolsOpen && await win.isDevToolsOpen()) {
-        // @ts-ignore
-        win.closeDevTools();
-      } else {
-        // @ts-ignore
-        win.openDevTools();
-      }
-    } catch { /* ignore */ }
-  }
+// Tắt menu chuột phải mặc định của webview (trừ ô nhập liệu)
+document.addEventListener('contextmenu', (e) => {
+  const target = e.target as HTMLElement | null;
+  if (target?.closest('input, textarea, [contenteditable="true"]')) return;
+  e.preventDefault();
 });
 
 // Start

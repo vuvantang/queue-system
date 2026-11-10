@@ -4,9 +4,25 @@ let serverUrl = localStorage.getItem('counter_server_url') || 'http://localhost:
 let authToken = localStorage.getItem('counter_token') || '';
 
 export function getServerUrl(): string { return serverUrl; }
-export function setServerUrl(url: string): void {
-  serverUrl = url.replace(/\/+$/, '');
+
+/** Returns a normalized http(s) base URL, or null if invalid. */
+export function normalizeServerUrl(url: string): string | null {
+  try {
+    const u = new URL(url.trim());
+    if (u.protocol !== 'http:' && u.protocol !== 'https:') return null;
+    if (u.username || u.password) return null;
+    return (u.origin + u.pathname).replace(/\/+$/, '');
+  } catch {
+    return null;
+  }
+}
+
+export function setServerUrl(url: string): boolean {
+  const normalized = normalizeServerUrl(url);
+  if (!normalized) return false;
+  serverUrl = normalized;
   localStorage.setItem('counter_server_url', serverUrl);
+  return true;
 }
 
 export function getToken(): string { return authToken; }
@@ -20,6 +36,21 @@ export function clearAuth(): void {
   localStorage.removeItem('counter_token');
 }
 
+export const MUST_CHANGE_PASSWORD = 'MUST_CHANGE_PASSWORD';
+export const MUST_CHANGE_PASSWORD_MSG = 'Bạn cần đổi mật khẩu trước khi tiếp tục';
+
+export class ApiError extends Error {
+  constructor(message: string, public status: number, public code?: string) {
+    super(message);
+  }
+}
+
+// Called when the server answers 403 MUST_CHANGE_PASSWORD
+let mustChangePasswordHandler: (() => void) | null = null;
+export function onMustChangePassword(handler: () => void): void {
+  mustChangePasswordHandler = handler;
+}
+
 async function apiFetch(path: string, options?: RequestInit & { noAuth?: boolean }): Promise<any> {
   const method = options?.method || 'GET';
   console.debug('[API]', method, path);
@@ -29,29 +60,42 @@ async function apiFetch(path: string, options?: RequestInit & { noAuth?: boolean
     headers['Authorization'] = `Bearer ${authToken}`;
   }
 
-  const res = await fetch(`${serverUrl}/api${path}`, { headers, ...options });
+  const { noAuth: _noAuth, ...fetchOptions } = options || {};
+  const res = await fetch(`${serverUrl}/api${path}`, { ...fetchOptions, headers });
   if (!res.ok) {
     if (res.status === 401 && !options?.noAuth) {
       console.warn('[API] 401 session expired:', path);
       clearAuth();
-      throw new Error('SESSION_EXPIRED');
+      throw new ApiError('Phiên đăng nhập đã hết hạn, vui lòng đăng nhập lại', 401, 'SESSION_EXPIRED');
     }
     console.warn('[API] Error', res.status, path);
-    const err = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
-    throw new Error(err.error);
+    const err = await res.json().catch(() => ({} as { error?: string }));
+    const serverMsg: string = typeof err?.error === 'string' ? err.error : '';
+    if (res.status === 403 && serverMsg === MUST_CHANGE_PASSWORD) {
+      mustChangePasswordHandler?.();
+      throw new ApiError(MUST_CHANGE_PASSWORD_MSG, 403, MUST_CHANGE_PASSWORD);
+    }
+    let msg = serverMsg;
+    if (!msg) {
+      msg = res.status === 429
+        ? 'Quá nhiều yêu cầu, vui lòng thử lại sau ít phút'
+        : `Lỗi kết nối (HTTP ${res.status})`;
+    }
+    throw new ApiError(msg, res.status);
   }
   return res.json();
 }
 
 // Auth
-export async function login(username: string, password: string) {
+export async function login(username: string, password: string): Promise<{ user: any; mustChangePassword: boolean }> {
   const data = await apiFetch('/auth/login', {
     method: 'POST',
     body: JSON.stringify({ username, password }),
     noAuth: true,
-  } as any);
+  });
   setToken(data.token);
-  return data.user;
+  const mustChangePassword = !!(data.must_change_password ?? data.user?.must_change_password);
+  return { user: data.user, mustChangePassword };
 }
 
 export async function getMe() {
@@ -59,10 +103,13 @@ export async function getMe() {
 }
 
 export async function changePassword(oldPassword: string, newPassword: string) {
-  return apiFetch('/auth/change-password', {
+  const data = await apiFetch('/auth/change-password', {
     method: 'PUT',
     body: JSON.stringify({ old_password: oldPassword, new_password: newPassword }),
   });
+  // Server revokes older tokens on password change and returns a fresh one.
+  if (data && typeof data.token === 'string') setToken(data.token);
+  return data;
 }
 
 // Areas & Counters
